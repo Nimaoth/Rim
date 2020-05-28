@@ -1,5 +1,5 @@
 [package]
-name = "Rimvi"
+name = "rimvi"
 version = "0.1.0"
 authors = ["Nico <nicolas.otremba@web.de>"]
 edition = "2018"
@@ -7,3 +7,12 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# glfw = "0.37.0"
+sdl2 = "0.33.0"
+gl = "0.14.0"
+imgui = "0.3.0"
+imgui-sdl2 = "0.9.0"
+imgui-opengl-renderer = "0.7.0"
+
+# [dependencies.glfw]
+# git = "https://github.com/bjz/glfw-rs.git"
