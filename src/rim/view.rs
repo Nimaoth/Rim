@@ -4,6 +4,16 @@ use imgui::im_str;
 use super::image::Image;
 use super::vec::Vec2;
 
+fn clamp(f: f32, min: f32, max: f32) -> f32 {
+    if f < min {
+        return min;
+    } else if f > max {
+        return max;
+    } else {
+        return f;
+    }
+}
+
 struct Defer<F>
     where F : FnOnce() {
     func: Option<F>
@@ -74,13 +84,6 @@ impl View {
         let title = im_str!("{}", title);
 
         let tok = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
-        defer!(tok.pop(ui));
-
-        let border_color = match self.selected {
-            true =>  [8.0, 0.6, 0.2, 1.0],
-            false => [0.2, 0.2, 0.2, 1.0],
-        };
-        let tok = ui.push_style_color(imgui::StyleColor::Border, border_color);
         defer!(tok.pop(ui));
 
         imgui::Window::new(&title)
@@ -161,7 +164,7 @@ impl View {
                         self.zoom /= 1.0 + self.zoom_speed * 0.01;
                     }
                 }
-                
+
                 for img in self.images.iter() {
                     let image_as = img.width as f32 / img.height as f32;
                     let (width, height) = if image_as > content_region_as {
@@ -169,6 +172,11 @@ impl View {
                     } else {
                         (content_region_height * image_as, content_region_height)
                     };
+
+
+                    self.rect_pos.x = clamp(self.rect_pos.x, -width * 0.5, width * 0.5);
+                    self.rect_pos.y = clamp(self.rect_pos.y, -height * 0.5, height * 0.5);
+
 
                     // center
                     let center_pos = Vec2::new(0.0, 0.0);
@@ -235,7 +243,7 @@ impl View {
 
     pub fn reload(&self) {
         for img in self.images.iter() {
-            img.reload_from_disk();
+            img.reload_from_disk().unwrap_or(());
         }
     }
 }

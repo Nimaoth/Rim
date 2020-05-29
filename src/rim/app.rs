@@ -34,6 +34,8 @@ pub struct App {
     show_titlebars  : bool,
 
     selected        : usize,
+
+    maximized       : bool,
 }
 
 impl App {
@@ -44,7 +46,7 @@ impl App {
         let window = video_subsystem
             .window("Game", 1000, 900)
             .opengl()
-            .position_centered()
+            .resizable()
             .build()
             .unwrap();
 
@@ -83,8 +85,8 @@ impl App {
             dir_watcher_recv: watch_recv,
             
             show_titlebars  : false,
-
             selected        : 0,
+            maximized       : false,
         }
     }
 
@@ -175,6 +177,17 @@ impl App {
                         }
                     },
 
+                    // maximize
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::M), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::M), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
+                        if self.maximized {
+                            self.window.set_fullscreen(sdl2::video::FullscreenType::Off).unwrap_or(());
+                        } else {
+                            self.window.set_fullscreen(sdl2::video::FullscreenType::True).unwrap_or(());
+                        }
+                        self.maximized = self.window.fullscreen_state() == sdl2::video::FullscreenType::True;
+                    },
+
                     // switch selection
                     Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::Tab), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } => {
                         if self.selected < self.views.len() {
@@ -262,8 +275,16 @@ impl App {
                 self.layout.layout(&mut self.views, window_size.0 as i32, window_size.1 as i32);
             }
 
+            let view_count = self.views.len();
             for view in self.views.iter_mut() {
+                let border_color = match (view.selected, view_count) {
+                    (true, 1) =>  [0.2, 0.2, 0.2, 1.0],
+                    (true, _) =>  [1.0, 0.6, 0.2, 1.0],
+                    (false, _) => [0.2, 0.2, 0.2, 1.0],
+                };
+                let tok = ui.push_style_color(imgui::StyleColor::Border, border_color);
                 view.render(&ui, self.show_titlebars);
+                tok.pop(&ui);
             }
 
             // ui.show_demo_window(&mut true);
