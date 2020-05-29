@@ -6,12 +6,12 @@
         {
             "label": "run",
             "type": "shell",
-            "command": "./target/debug/rimvi"
+            "command": "./target/debug/rimvi -d /home/nimaoth/wallpapers"
         },
         {
             "label": "build_and_run",
             "type": "shell",
-            "command": "cargo run"
+            "command": "cargo run -- -d /home/nimaoth/wallpapers"
         },
         {
             "label": "build",
