@@ -34,6 +34,8 @@ pub struct App {
     show_titlebars  : bool,
 
     selected        : usize,
+
+    maximized       : bool,
 }
 
 impl App {
@@ -44,7 +46,7 @@ impl App {
         let window = video_subsystem
             .window("Game", 1000, 900)
             .opengl()
-            .position_centered()
+            .resizable()
             .build()
             .unwrap();
 
@@ -83,8 +85,8 @@ impl App {
             dir_watcher_recv: watch_recv,
             
             show_titlebars  : false,
-
             selected        : 0,
+            maximized       : false,
         }
     }
 
@@ -173,6 +175,17 @@ impl App {
                         if self.selected < self.views.len() {
                             self.views[self.selected].set_filter_menthod(FilterMethod::Nearest);
                         }
+                    },
+
+                    // maximize
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::M), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::M), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
+                        if self.maximized {
+                            self.window.set_fullscreen(sdl2::video::FullscreenType::Off).unwrap_or(());
+                        } else {
+                            self.window.set_fullscreen(sdl2::video::FullscreenType::True).unwrap_or(());
+                        }
+                        self.maximized = self.window.fullscreen_state() == sdl2::video::FullscreenType::True;
                     },
 
                     // switch selection
