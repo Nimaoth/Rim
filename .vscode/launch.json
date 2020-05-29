@@ -8,7 +8,7 @@
             "request": "launch",
             "name": "Launch",
             "program": "${workspaceFolder}/target/debug/rimvi",
-            "args": ["-d", "/home/nimaoth/wallpapers"],
+            "args": ["/home/nimaoth/wallpapers"],
             "cwd": "${workspaceFolder}"
         }
     ]

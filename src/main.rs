@@ -11,23 +11,20 @@ fn main() {
         (version: "0.0.3")
         (author: "Nimaoth")
         (about: "View images")
-        (@arg file: -f +takes_value "Display this file")
-        (@arg directory: -d +takes_value "Display files in this folder")
+        (@arg file: +required +takes_value "Display this file or files in this directory")
     )
     .get_matches();
 
     let mut app = App::new();
 
-    if matches.is_present("file") {
-        let image_path = matches.value_of("file").unwrap();
-        match app.open_image(Path::new(image_path)) {
+    let path = PathBuf::from(matches.value_of("file").unwrap()).canonicalize().expect("File doesn't exist");
+    if Path::is_file(&path) {
+        match app.open_image(Path::new(&path)) {
             Ok(_) => {},
-            Err(_) => eprintln!("Failed to load image '{}'", image_path),
+            Err(_) => eprintln!("Failed to load image {:?}", path),
         }
-    }
-    if matches.is_present("directory") {
-        let dir_path = matches.value_of("directory").unwrap();
-        match std::fs::read_dir(dir_path) {
+    } else if Path::is_dir(&path) {
+        match std::fs::read_dir(path) {
             Ok(dir) => {
                 for image_path in dir.into_iter() {
                     match image_path {
@@ -42,8 +39,11 @@ fn main() {
                     }
                 }
             }
-            Err(msg) => eprintln!("Failed to load files in directory '{}': {}", dir_path, msg),
+            Err(msg) => eprintln!("Failed to load files in directory: {}", msg),
         }
+    } else {
+        eprintln!("path is not a file or directory: {:?}", path);
+        return;
     }
 
     app.run();

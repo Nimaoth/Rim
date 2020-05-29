@@ -140,7 +140,7 @@ impl View {
                 let [content_region_width, content_region_height] = ui.content_region_avail();
                 let content_region_as = content_region_width / content_region_height;
 
-                if self.selected {
+                if self.selected && !ui.is_key_down(sdl2::keyboard::Scancode::Application as u32) {
                     if ui.is_key_pressed(sdl2::keyboard::Scancode::Space as u32) {
                         self.zoom = 1.0;
                         self.rect_pos = Vec2::zero();
