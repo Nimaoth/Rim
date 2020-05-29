@@ -3,25 +3,16 @@ use sdl2;
 #[macro_use]
 extern crate clap;
 
-use imgui::im_str;
+
 use std::boxed::Box;
 use std::path::*;
 use std::rc::Rc;
+use std::sync::mpsc::channel;
+use std::time::Duration;
+use std::sync::mpsc;
 
-// #[derive(Clap)]
-// #[clap(version = "1.0", author = "Nimaoth")]
-// struct Opts {
-//     /// Sets a custom config file. Could have been an Option<T> with no default too
-//     #[clap(short, long, default_value = "default.conf")]
-//     config: String,
-//     /// Some input. Because this isn't an Option<T> it's required to be used
-//     input: String,
-//     /// A level of verbosity, and can be used multiple times
-//     #[clap(short, long, parse(from_occurrences))]
-//     verbose: i32,
-//     #[clap(subcommand)]
-//     subcmd: SubCommand,
-// }
+use imgui::im_str;
+use notify::{Watcher, RecursiveMode, watcher};
 
 macro_rules! GL {
     ($expression:expr) => {
@@ -39,14 +30,6 @@ macro_rules! GL {
         }
     };
 }
-clap::arg_enum! {
-    #[derive(PartialEq, Debug)]
-    pub enum Foo {
-        Bar,
-        Baz,
-        Qux
-    }
-}
 
 trait Layout {
     fn layout(&self, views: &mut [View], width: i32, height: i32);
@@ -62,7 +45,33 @@ impl GridLayout {
 
 impl Layout for GridLayout {
     fn layout(&self, views: &mut [View], width: i32, height: i32) {
-        
+        let grid_columns = {
+            let cols = (views.len() as f32).sqrt() as i32;
+            if cols * cols < views.len() as i32 {
+                cols + 1
+            } else {
+                cols
+            }
+        };
+        let grid_rows = (views.len() as f32 / grid_columns as f32).ceil() as i32;
+
+        let cell_width = width / grid_columns;
+        let cell_height = height / grid_rows;
+
+        // println!("cols: {}, rows: {}", grid_columns, grid_rows);
+        for y in 0 .. grid_rows {
+            for x in 0 .. grid_columns {
+                let index = (x + y * grid_columns) as usize;
+                if index >= views.len() {
+                    break;
+                }
+                let view = &mut views[index];
+                view.x = x * cell_width;
+                view.y = y * cell_height;
+                view.width = cell_width;
+                view.height = cell_height;
+            }
+        }
     }
 }
 
@@ -89,22 +98,36 @@ impl View {
         let title: String = self.images[0].path.to_str().unwrap().to_owned();
         let title = im_str!("{}", title);
         imgui::Window::new(&title)
-            // .position([self.x as f32, self.y as f32], imgui::Condition::Always)
-            // .size(
-            //     [self.width as f32, self.height as f32],
-            //     imgui::Condition::Always,
-            // )
-            // .resizable(false)
-            // .title_bar(false)
+            .position([self.x as f32, self.y as f32], imgui::Condition::Always)
+            .size(
+                [self.width as f32, self.height as f32],
+                imgui::Condition::Always,
+            )
+            .resizable(false)
+            .collapsible(false)
+            .title_bar(true)
             .build(&ui, || {
-                if ui.small_button(im_str!("Reload from disk")) {
-                    for img in self.images.iter() {
-                        img.reload_from_disk();
+                ui.menu_bar(|| {
+                    imgui::MenuItem::new(im_str!("File"))
+                        .build(ui);
+                });
+                
+                let context_menu_name = im_str!("View Context Menu {}", self.images[0].path.to_str().unwrap());
+                ui.popup(&context_menu_name, || {
+                    if ui.small_button(im_str!("Reload from disk")) {
+                        for img in self.images.iter() {
+                            img.reload_from_disk().unwrap_or(());
+                        }
                     }
-                }
+                });
+
+                ui.open_popup(&context_menu_name);
+                
+                let [w, h] = ui.content_region_avail();
+
                 unsafe {
                     for img in self.images.iter() {
-                        imgui::Image::new(std::mem::transmute(img.renderer_id), [self.width as f32, self.height as f32])
+                        imgui::Image::new(std::mem::transmute(img.renderer_id), [w, h])
                             .build(&ui);
                     }
                 }
@@ -113,12 +136,12 @@ impl View {
 }
 
 struct Image {
-    path: std::path::PathBuf,
-    renderer_id: usize,
+    path            : std::path::PathBuf,
+    renderer_id     : usize,
 }
 
 impl Image {
-    fn new(path: &Path) -> Result<Image, ()> {
+    fn new(path: &Path) -> Result<Rc<Image>, ()> {
         let image = match image::open(path) {
             Ok(img) => img,
             Err(_) => return Err(()),
@@ -158,10 +181,13 @@ impl Image {
             data_type,
             img_data.as_ptr() as *const std::ffi::c_void
         ));
-        Ok(Image {
-            path: path.to_owned(),
-            renderer_id: tex_id as usize,
-        })
+
+        let image = Rc::new(Image {
+            path            : path.to_owned(),
+            renderer_id     : tex_id as usize,
+        });
+
+        return Ok(image);
     }
 
     fn reload_from_disk(&self) -> Result<(), ()> {
@@ -199,18 +225,28 @@ impl Image {
     }
 }
 
-struct App {
-    views: Vec<View>,
-    layout: Box<dyn Layout>,
-    images: Rc<Vec<Rc<Image>>>,
+// impl Drop for Image {
+//     fn drop(&mut self) {
+        
+//     }
+    
+// }
 
-    sdl: sdl2::Sdl,
-    video_subsystem: sdl2::VideoSubsystem,
-    window: sdl2::video::Window,
-    gl_context: sdl2::video::GLContext,
-    imgui: imgui::Context,
-    imgui_sdl2: imgui_sdl2::ImguiSdl2,
-    opengl_renderer: imgui_opengl_renderer::Renderer,
+struct App {
+    views           : Vec<View>,
+    layout          : Box<dyn Layout>,
+    images          : Rc<Vec<Rc<Image>>>,
+
+    sdl             : sdl2::Sdl,
+    _video_subsystem: sdl2::VideoSubsystem,
+    window          : sdl2::video::Window,
+    _gl_context     : sdl2::video::GLContext,
+    imgui           : imgui::Context,
+    imgui_sdl2      : imgui_sdl2::ImguiSdl2,
+    opengl_renderer : imgui_opengl_renderer::Renderer,
+
+    dir_watcher     : notify::INotifyWatcher,
+    dir_watcher_recv: mpsc::Receiver<notify::DebouncedEvent>,
 }
 
 impl App {
@@ -232,32 +268,53 @@ impl App {
 
         let mut imgui = imgui::Context::create();
         imgui.set_ini_filename(None);
+        imgui.style_mut().window_rounding = 0f32;
 
         let imgui_sdl2 = imgui_sdl2::ImguiSdl2::new(&mut imgui, &window);
         let renderer = imgui_opengl_renderer::Renderer::new(&mut imgui, |s| {
             video_subsystem.gl_get_proc_address(s) as _
         });
 
-        App {
-            views: Vec::new(),
-            layout: GridLayout::new(),
-            images: Rc::new(Vec::new()),
+        let (watch_send, watch_recv) = channel();
+        let mut watcher = watcher(watch_send, Duration::from_secs(1)).unwrap();
+        watcher.watch("/home/nimaoth/wallpapers/current.jpg", RecursiveMode::Recursive).unwrap();
 
-            sdl: sdl,
-            video_subsystem: video_subsystem,
-            window: window,
-            gl_context: gl_context,
-            imgui: imgui,
-            imgui_sdl2: imgui_sdl2,
-            opengl_renderer: renderer,
+        App {
+            views           : Vec::new(),
+            layout          : GridLayout::new(),
+            images          : Rc::new(Vec::new()),
+
+            sdl             : sdl,
+            _video_subsystem: video_subsystem,
+            window          : window,
+            _gl_context     : gl_context,
+            imgui           : imgui,
+            imgui_sdl2      : imgui_sdl2,
+            opengl_renderer : renderer,
+
+            dir_watcher     : watcher,
+            dir_watcher_recv: watch_recv,
         }
     }
 
     fn open_image(&mut self, path: &Path) -> Result<(), ()> {
         match Image::new(path) {
-            Ok(image) => Ok(Rc::get_mut(&mut self.images).unwrap().push(Rc::new(image))),
+            Ok(image) => {
+                self.dir_watcher.watch(path, notify::RecursiveMode::NonRecursive).unwrap_or(());
+                Ok(Rc::get_mut(&mut self.images).unwrap().push(image))
+            },
             Err(_) => Err(()),
         }
+    }
+
+    fn find_image_by_path(&mut self, path: &Path) -> Option<&Image> {
+        for image in self.images.iter() {
+            if image.path == path {
+                return Some(image);
+            }
+        }
+
+        None
     }
 
     fn run(&mut self) {
@@ -282,6 +339,28 @@ impl App {
                 }
             }
 
+            while let Ok(event) = self.dir_watcher_recv.try_recv() {
+                println!("{:?}", event);
+                match event {
+                    notify::DebouncedEvent::NoticeWrite(_) => {},
+                    notify::DebouncedEvent::NoticeRemove(_) => {},
+                    notify::DebouncedEvent::Create(_) => {},
+                    notify::DebouncedEvent::Write(path) => {
+                        match self.find_image_by_path(&path) {
+                            Some(image) => {
+                                image.reload_from_disk().unwrap_or(());
+                            }
+                            None => {}
+                        };
+                    },
+                    notify::DebouncedEvent::Chmod(_) => {},
+                    notify::DebouncedEvent::Remove(_) => {},
+                    notify::DebouncedEvent::Rename(_, _) => {},
+                    notify::DebouncedEvent::Rescan => {},
+                    notify::DebouncedEvent::Error(_, _) => {},
+                }
+            }
+
             self.imgui_sdl2.prepare_frame(
                 self.imgui.io_mut(),
                 &self.window,
@@ -289,10 +368,13 @@ impl App {
             );
 
             let ui = self.imgui.frame();
+            ui.show_demo_window(&mut true);
 
             let window_size = self.window.size();
 
-            self.layout.layout(&mut self.views, window_size.0 as i32, window_size.1 as i32);
+            if self.views.len() > 0 {
+                self.layout.layout(&mut self.views, window_size.0 as i32, window_size.1 as i32);
+            }
 
             for view in self.views.iter() {
                 view.render(&ui);
@@ -327,7 +409,7 @@ fn main() {
     if matches.is_present("file") {
         let image_path = matches.value_of("file").unwrap();
         match app.open_image(Path::new(image_path)) {
-            Ok(img) => {}
+            Ok(_) => {},
             Err(_) => eprintln!("Failed to load image '{}'", image_path),
         }
     }
@@ -340,7 +422,7 @@ fn main() {
                         Ok(path) => {
                             let path = path.path().canonicalize().unwrap();
                             match app.open_image(&path) {
-                                Ok(img) => {}
+                                Ok(_) => {},
                                 Err(_) => eprintln!("Failed to load image '{:?}'", &path),
                             }
                         }
