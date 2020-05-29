@@ -43,7 +43,9 @@ pub struct View {
     zoom            : f32,
 
     pan_speed       : f32,
-    zoom_speed      : f32
+    zoom_speed      : f32,
+
+    pub selected    : bool,
 }
 
 impl View {
@@ -62,17 +64,19 @@ impl View {
 
             pan_speed       : 7.5,
             zoom_speed      : 3.0,
+
+            selected        : false,
         }
     }
 
-    pub fn render(&mut self, ui: &imgui::Ui, title_bar: bool, selected: bool) {
+    pub fn render(&mut self, ui: &imgui::Ui, title_bar: bool) {
         let title: String = self.images[0].path.to_str().unwrap().to_owned();
         let title = im_str!("{}", title);
 
         let tok = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
         defer!(tok.pop(ui));
 
-        let border_color = match selected {
+        let border_color = match self.selected {
             true =>  [8.0, 0.6, 0.2, 1.0],
             false => [0.2, 0.2, 0.2, 1.0],
         };
@@ -116,24 +120,15 @@ impl View {
                         tok.end(ui);
 
                         if changed {
-                            for img in self.images.iter() {
-                                GL!(BindTexture(TEXTURE_2D, img.renderer_id as u32));
-                                
-                                let filter_method = match self.filter_method {
-                                    FilterMethod::Linear => gl::LINEAR,
-                                    FilterMethod::Nearest => gl::NEAREST,
-                                } as i32;
-                                
-                                GL!(TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, filter_method));
-                                GL!(TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, filter_method));
-                            }
-                            GL!(BindTexture(TEXTURE_2D, 0));
+                            self.set_filter_menthod(self.filter_method);
                         }
                     }
 
                 });
 
-                if ui.is_mouse_down(imgui::MouseButton::Right) {
+                if ui.is_mouse_hovering_rect(
+                    ui.window_pos(), 
+                    (Vec2::from(ui.window_pos()) + Vec2::from(ui.window_size())).into()) && ui.is_mouse_down(imgui::MouseButton::Right) {
                     ui.open_popup(&context_menu_name);
                 }
                 tok.pop(ui);
@@ -142,27 +137,27 @@ impl View {
                 let [content_region_width, content_region_height] = ui.content_region_avail();
                 let content_region_as = content_region_width / content_region_height;
 
-                if selected {
+                if self.selected {
                     if ui.is_key_pressed(sdl2::keyboard::Scancode::Space as u32) {
                         self.zoom = 1.0;
                         self.rect_pos = Vec2::zero();
                     }
                     if ui.is_key_down(sdl2::keyboard::Scancode::W as u32) {
-                        self.rect_pos = self.rect_pos + Vec2::new(0.0, -self.pan_speed);
+                        self.rect_pos = self.rect_pos + Vec2::new(0.0, -self.pan_speed / self.zoom);
                     }
                     if ui.is_key_down(sdl2::keyboard::Scancode::S as u32) {
-                        self.rect_pos = self.rect_pos + Vec2::new(0.0, self.pan_speed);
+                        self.rect_pos = self.rect_pos + Vec2::new(0.0, self.pan_speed / self.zoom);
                     }
                     if ui.is_key_down(sdl2::keyboard::Scancode::A as u32) {
-                        self.rect_pos = self.rect_pos + Vec2::new(-self.pan_speed, 0.0);
+                        self.rect_pos = self.rect_pos + Vec2::new(-self.pan_speed / self.zoom, 0.0);
                     }
                     if ui.is_key_down(sdl2::keyboard::Scancode::D as u32) {
-                        self.rect_pos = self.rect_pos + Vec2::new(self.pan_speed, 0.0);
+                        self.rect_pos = self.rect_pos + Vec2::new(self.pan_speed / self.zoom, 0.0);
                     }
-                    if ui.is_key_down(sdl2::keyboard::Scancode::K as u32) {
+                    if ui.is_key_down(sdl2::keyboard::Scancode::Period as u32) {
                         self.zoom *= 1.0 + self.zoom_speed * 0.01;
                     }
-                    if ui.is_key_down(sdl2::keyboard::Scancode::J as u32) {
+                    if ui.is_key_down(sdl2::keyboard::Scancode::Comma as u32) {
                         self.zoom /= 1.0 + self.zoom_speed * 0.01;
                     }
                 }
@@ -220,5 +215,27 @@ impl View {
                     }
                 }
             });
+    }
+
+    pub fn set_filter_menthod(&mut self, filter_method: FilterMethod) {
+        self.filter_method = filter_method;
+        for img in self.images.iter() {
+            GL!(BindTexture(TEXTURE_2D, img.renderer_id as u32));
+            
+            let filter_method = match self.filter_method {
+                FilterMethod::Linear => gl::LINEAR,
+                FilterMethod::Nearest => gl::NEAREST,
+            } as i32;
+            
+            GL!(TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, filter_method));
+            GL!(TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, filter_method));
+        }
+        GL!(BindTexture(TEXTURE_2D, 0));
+    }
+
+    pub fn reload(&self) {
+        for img in self.images.iter() {
+            img.reload_from_disk();
+        }
     }
 }

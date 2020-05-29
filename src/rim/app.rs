@@ -9,7 +9,7 @@ use std::sync::mpsc;
 
 use notify::{Watcher, watcher};
 
-use super::view::View;
+use super::view::{View, FilterMethod};
 use super::image::Image;
 use super::layout::{Layout, GridLayout};
 
@@ -124,6 +124,10 @@ impl App {
             }
         }
 
+        if self.views.len() > 0 {
+            self.views[0].selected = true;
+        }
+
         let mut event_pump = self.sdl.event_pump().unwrap();
         'main: loop {
             for event in event_pump.poll_iter() {
@@ -138,29 +142,82 @@ impl App {
                 match event {
                     // quit
                     Event::Quit { .. } => break 'main,
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Q), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Q), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::P), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::P), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
                         break 'main;
                     },
 
                     // toggle titlebar
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::LAlt), repeat : false, .. } => {
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::LAlt), repeat : false, .. } => {
                         self.show_titlebars = !self.show_titlebars;
                     },
 
                     // reload
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::R), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::R), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } |
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F5), .. } => {
-                        println!("todo: reload");
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::R), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::R), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } |
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::F5), .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected].reload();
+                        }
+                    },
+
+                    // filter method
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::L), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::L), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected].set_filter_menthod(FilterMethod::Linear);
+                        }
+                    },
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::N), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::N), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected].set_filter_menthod(FilterMethod::Nearest);
+                        }
                     },
 
                     // switch selection
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Tab), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } => {
-                        self.selected = ((self.selected as i64 - 1 + self.views.len() as i64) as usize) % self.views.len();
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::Tab), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected].selected = false;
+                            self.selected = ((self.selected - 1) % self.views.len() + self.views.len()) % self.views.len();
+                            self.views[self.selected].selected = true;
+                        }
                     },
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Tab), .. } => {
-                        self.selected = (self.selected + 1) % self.views.len();
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::Tab), .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected].selected = false;
+                            self.selected = (self.selected + 1) % self.views.len();
+                            self.views[self.selected].selected = true;
+                        }
+                    },
+
+                    Event::KeyDown {  scancode: Some(sdl2::keyboard::Scancode::I), .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected].selected = false;
+                            self.selected = self.layout.get_next_index(self.views.len(), self.selected, 0, -1);
+                            self.views[self.selected].selected = true;
+                        }
+                    },
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::K), .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected].selected = false;
+                            self.selected = self.layout.get_next_index(self.views.len(), self.selected, 0, 1);
+                            self.views[self.selected].selected = true;
+                        }
+                    },
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::J), .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected as usize].selected = false;
+                            self.selected = self.layout.get_next_index(self.views.len(), self.selected, -1, 0);
+                            self.views[self.selected as usize].selected = true;
+                        }
+                    },
+                    Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::L), .. } => {
+                        if self.selected < self.views.len() {
+                            self.views[self.selected as usize].selected = false;
+                            self.selected = self.layout.get_next_index(self.views.len(), self.selected, 1, 0);
+                            self.views[self.selected as usize].selected = true;
+                        }
                     },
 
                     //
@@ -205,8 +262,8 @@ impl App {
                 self.layout.layout(&mut self.views, window_size.0 as i32, window_size.1 as i32);
             }
 
-            for (i, view) in self.views.iter_mut().enumerate() {
-                view.render(&ui, self.show_titlebars, i == self.selected);
+            for view in self.views.iter_mut() {
+                view.render(&ui, self.show_titlebars);
             }
 
             // ui.show_demo_window(&mut true);
