@@ -8,6 +8,8 @@ use std::rc::Rc;
 pub struct Image {
     pub path: std::path::PathBuf,
     pub renderer_id: usize,
+    pub width: usize,
+    pub height: usize,
 }
 
 impl Image {
@@ -57,6 +59,8 @@ impl Image {
         let image = Rc::new(Image {
             path: path.to_owned(),
             renderer_id: tex_id as usize,
+            width: width as usize,
+            height: height as usize,
         });
 
         return Ok(image);

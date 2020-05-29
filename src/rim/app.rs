@@ -13,6 +13,8 @@ use super::view::View;
 use super::image::Image;
 use super::layout::{Layout, GridLayout};
 
+// use imgui::im_str;
+
 pub struct App {
     views           : Vec<View>,
     layout          : Box<dyn Layout>,
@@ -28,15 +30,19 @@ pub struct App {
 
     dir_watcher     : notify::INotifyWatcher,
     dir_watcher_recv: mpsc::Receiver<notify::DebouncedEvent>,
+
+    show_titlebars  : bool,
+
+    selected        : usize,
 }
 
 impl App {
     pub fn new() -> App {
         let sdl = sdl2::init().unwrap();
-
+        
         let video_subsystem = sdl.video().unwrap();
         let window = video_subsystem
-            .window("Game", 1280, 720)
+            .window("Game", 1000, 900)
             .opengl()
             .position_centered()
             .build()
@@ -49,7 +55,8 @@ impl App {
 
         let mut imgui = imgui::Context::create();
         imgui.set_ini_filename(None);
-        imgui.style_mut().window_rounding = 0f32;
+        imgui.style_mut().window_rounding = 0.0;
+        imgui.style_mut().window_border_size = 1.0;
 
         let imgui_sdl2 = imgui_sdl2::ImguiSdl2::new(&mut imgui, &window);
         let renderer = imgui_opengl_renderer::Renderer::new(&mut imgui, |s| {
@@ -74,6 +81,10 @@ impl App {
 
             dir_watcher     : watcher,
             dir_watcher_recv: watch_recv,
+            
+            show_titlebars  : false,
+
+            selected        : 0,
         }
     }
 
@@ -120,8 +131,39 @@ impl App {
                 if self.imgui_sdl2.ignore_event(&event) {
                     continue;
                 }
+
+                // println!("{:?}", event);
+
+                use sdl2::event::Event;
                 match event {
-                    sdl2::event::Event::Quit { .. } => break 'main,
+                    // quit
+                    Event::Quit { .. } => break 'main,
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Q), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Q), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
+                        break 'main;
+                    },
+
+                    // toggle titlebar
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::LAlt), repeat : false, .. } => {
+                        self.show_titlebars = !self.show_titlebars;
+                    },
+
+                    // reload
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::R), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::R), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } |
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F5), .. } => {
+                        println!("todo: reload");
+                    },
+
+                    // switch selection
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Tab), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } => {
+                        self.selected = ((self.selected as i64 - 1 + self.views.len() as i64) as usize) % self.views.len();
+                    },
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Tab), .. } => {
+                        self.selected = (self.selected + 1) % self.views.len();
+                    },
+
+                    //
                     _ => {}
                 }
             }
@@ -155,7 +197,7 @@ impl App {
             );
 
             let ui = self.imgui.frame();
-            ui.show_demo_window(&mut true);
+            // ui.show_demo_window(&mut true);
 
             let window_size = self.window.size();
 
@@ -163,8 +205,8 @@ impl App {
                 self.layout.layout(&mut self.views, window_size.0 as i32, window_size.1 as i32);
             }
 
-            for view in self.views.iter_mut() {
-                view.render(&ui);
+            for (i, view) in self.views.iter_mut().enumerate() {
+                view.render(&ui, self.show_titlebars, i == self.selected);
             }
 
             // ui.show_demo_window(&mut true);

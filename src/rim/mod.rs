@@ -4,3 +4,4 @@ pub mod image;
 pub mod view;
 pub mod layout;
 pub mod app;
+pub mod vec;
