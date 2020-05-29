@@ -12,7 +12,7 @@ use std::time::Duration;
 use std::sync::mpsc;
 
 use imgui::im_str;
-use notify::{Watcher, RecursiveMode, watcher};
+use notify::{Watcher, watcher};
 
 macro_rules! GL {
     ($expression:expr) => {
@@ -75,12 +75,20 @@ impl Layout for GridLayout {
     }
 }
 
+#[derive(Debug,Copy,Clone,PartialEq)]
+enum FilterMethod {
+    Nearest,
+    Linear
+}
+
 struct View {
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    images: Vec<Rc<Image>>,
+    x               : i32,
+    y               : i32,
+    width           : i32,
+    height          : i32,
+    images          : Vec<Rc<Image>>,
+
+    filter_method   : FilterMethod
 }
 
 impl View {
@@ -90,11 +98,13 @@ impl View {
             y       : 0,
             width   : 400,
             height  : 400,
-            images  : Vec::new()
+            images  : Vec::new(),
+
+            filter_method : FilterMethod::Nearest
         }
     }
 
-    fn render(&self, ui: &imgui::Ui) {
+    fn render(&mut self, ui: &imgui::Ui) {
         let title: String = self.images[0].path.to_str().unwrap().to_owned();
         let title = im_str!("{}", title);
         imgui::Window::new(&title)
@@ -112,16 +122,45 @@ impl View {
                         .build(ui);
                 });
                 
-                let context_menu_name = im_str!("View Context Menu {}", self.images[0].path.to_str().unwrap());
+                let context_menu_name = im_str!("View Context Menu {:?}", self.images[0].path);
                 ui.popup(&context_menu_name, || {
+                    ui.text(self.images[0].path.to_str().unwrap_or(""));
+                    ui.separator();
                     if ui.small_button(im_str!("Reload from disk")) {
                         for img in self.images.iter() {
                             img.reload_from_disk().unwrap_or(());
                         }
                     }
+
+                    
+                    if let Some(tok) = ui.begin_menu(im_str!("Sampling Method"), true) {
+                        let mut changed = false;
+                        changed |= ui.radio_button(im_str!("Nearest"), &mut self.filter_method, FilterMethod::Nearest);
+                        changed |= ui.radio_button(im_str!("Linear"), &mut self.filter_method, FilterMethod::Linear);
+                        tok.end(ui);
+
+                        if changed {
+                            for img in self.images.iter() {
+                                GL!(BindTexture(TEXTURE_2D, img.renderer_id as u32));
+                                
+                                let filter_method = match self.filter_method {
+                                    FilterMethod::Linear => gl::LINEAR,
+                                    FilterMethod::Nearest => gl::NEAREST,
+                                } as i32;
+                                
+                                GL!(TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, filter_method));
+                                GL!(TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, filter_method));
+                            }
+                            GL!(BindTexture(TEXTURE_2D, 0));
+                        }
+                    }
+
                 });
 
-                ui.open_popup(&context_menu_name);
+                if ui.is_mouse_down(imgui::MouseButton::Right) {
+                    ui.open_popup(&context_menu_name);
+                }
+
                 
                 let [w, h] = ui.content_region_avail();
 
@@ -147,27 +186,14 @@ impl Image {
             Err(_) => return Err(()),
         };
 
-        let (img_data, width, height, format, data_format, data_type) = match image.as_rgb8() {
-            Some(rgb) => (
-                rgb.as_ref(),
-                rgb.width(),
-                rgb.height(),
-                gl::RGB8,
-                gl::RGB,
-                gl::UNSIGNED_BYTE,
-            ),
-            None => return Err(()),
-        };
+        let img_data = image.to_rgb();
+        let (width, height, format, data_format, data_type) = (img_data.width(), img_data.height(), gl::RGB8, gl::RGB, gl::UNSIGNED_BYTE);
 
         let mut tex_id: u32 = 0;
         GL!(GenTextures(1, &mut tex_id));
         GL!(BindTexture(TEXTURE_2D, tex_id));
-        GL!(TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR as i32));
-        GL!(TexParameteri(
-            TEXTURE_2D,
-            TEXTURE_MAG_FILTER,
-            NEAREST as i32
-        ));
+        GL!(TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32));
+        GL!(TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32));
         GL!(TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32));
         GL!(TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32));
         GL!(TexImage2D(
@@ -181,6 +207,7 @@ impl Image {
             data_type,
             img_data.as_ptr() as *const std::ffi::c_void
         ));
+        GL!(BindTexture(TEXTURE_2D, 0));
 
         let image = Rc::new(Image {
             path            : path.to_owned(),
@@ -191,6 +218,7 @@ impl Image {
     }
 
     fn reload_from_disk(&self) -> Result<(), ()> {
+        println!("reloading image {:?}", self.path);
         let image = match image::open(&self.path) {
             Ok(img) => img,
             Err(_) => return Err(()),
@@ -224,13 +252,6 @@ impl Image {
         Ok(())
     }
 }
-
-// impl Drop for Image {
-//     fn drop(&mut self) {
-        
-//     }
-    
-// }
 
 struct App {
     views           : Vec<View>,
@@ -276,8 +297,7 @@ impl App {
         });
 
         let (watch_send, watch_recv) = channel();
-        let mut watcher = watcher(watch_send, Duration::from_secs(1)).unwrap();
-        watcher.watch("/home/nimaoth/wallpapers/current.jpg", RecursiveMode::Recursive).unwrap();
+        let watcher = watcher(watch_send, Duration::from_secs(1)).unwrap();
 
         App {
             views           : Vec::new(),
@@ -298,7 +318,14 @@ impl App {
     }
 
     fn open_image(&mut self, path: &Path) -> Result<(), ()> {
-        match Image::new(path) {
+        let path = match path.canonicalize() {
+            Ok(path) => path,
+            Err(_) => return Err(()),
+        };
+
+        println!("Opening image {:?}", path);
+
+        match Image::new(&path) {
             Ok(image) => {
                 self.dir_watcher.watch(path, notify::RecursiveMode::NonRecursive).unwrap_or(());
                 Ok(Rc::get_mut(&mut self.images).unwrap().push(image))
@@ -376,7 +403,7 @@ impl App {
                 self.layout.layout(&mut self.views, window_size.0 as i32, window_size.1 as i32);
             }
 
-            for view in self.views.iter() {
+            for view in self.views.iter_mut() {
                 view.render(&ui);
             }
 
