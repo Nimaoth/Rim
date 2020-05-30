@@ -13,12 +13,12 @@ pub struct Image {
 }
 
 impl Image {
-    pub fn new(path: &Path) -> Result<Rc<Image>, ()> {
+    pub fn new(path: &Path) -> Result<Rc<Image>, String> {
         let image = match image::open(path) {
             Ok(img) => img,
             Err(err) => {
                 println!("{:?}", err);
-                return Err(())
+                return Err(err.to_string())
             },
         };
 
@@ -69,11 +69,11 @@ impl Image {
         return Ok(image);
     }
 
-    pub fn reload_from_disk(&self) -> Result<(), ()> {
+    pub fn reload_from_disk(&self) -> Result<(), String> {
         println!("reloading image {:?}", self.path);
         let image = match image::open(&self.path) {
             Ok(img) => img,
-            Err(_) => return Err(()),
+            Err(err) => return Err(err.to_string()),
         };
 
         let (img_data, width, height, format, data_format, data_type) = match image.as_rgb8() {
@@ -85,7 +85,7 @@ impl Image {
                 gl::RGB,
                 gl::UNSIGNED_BYTE,
             ),
-            None => return Err(()),
+            None => return Err("Failed to load image".to_owned()),
         };
 
         GL!(BindTexture(TEXTURE_2D, self.renderer_id as u32));

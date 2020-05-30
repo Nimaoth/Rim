@@ -37,6 +37,8 @@ pub struct App {
 
     maximized       : bool,
     open_file_dialog: OpenFileDialog,
+
+    error_msg       : Option<String>,
 }
 
 impl App {
@@ -92,7 +94,9 @@ impl App {
             selected        : 0,
             maximized       : false,
 
-            open_file_dialog: OpenFileDialog::new()
+            open_file_dialog: OpenFileDialog::new(),
+
+            error_msg       : None,
         }
     }
 
@@ -113,7 +117,10 @@ impl App {
                         self.dir_watcher.watch(path, notify::RecursiveMode::NonRecursive).unwrap_or(());
                         Ok(())
                     },
-                    Err(_) => Err(()),
+                    Err(msg) => {
+                        self.error_msg = Some(msg);
+                        Err(())
+                    },
                 }
             },
         }
@@ -406,8 +413,33 @@ impl App {
             }
 
             let file_to_open = self.open_file_dialog.render(&ui, self.window.drawable_size());
-            
-            // ui.show_demo_window(&mut true);
+
+            // error message
+            let mut show_err = false;
+            match &self.error_msg {
+                Some(msg) => {
+                    show_err = true;
+                    imgui::Window::new(imgui::im_str!("Error"))
+                        .focus_on_appearing(true)
+                        .focused(true)
+                        .bring_to_front_on_focus(true)
+                        .opened(&mut show_err)
+                        .position([0.0, 0.0], imgui::Condition::Always)
+                        .scroll_bar(false)
+                        .scrollable(false)
+                        .always_auto_resize(true)
+                        .collapsible(false)
+                        .build(&ui, || {
+                            ui.text(msg);
+                        });
+                },
+                None => {},
+            }
+
+            if !show_err {
+                self.error_msg = None;
+            }
+
             unsafe {
                 gl::ClearColor(0.3, 0.3, 0.5, 1.0);
                 gl::Clear(gl::COLOR_BUFFER_BIT);
