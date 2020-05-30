@@ -21,15 +21,15 @@ fn main() {
     let (mut width, mut height) = (1000, 900);
     if matches.is_present("floating") {
         floating = true;
-        match matches.values_of("size") {
-            Some(values) => {
-                let values: Vec<_> = values.collect();
-                width = values[0].parse().expect("Width must be a number");
-                height = values[1].parse().expect("Height must be a number");
-            },
-            None => {},
-        };
     }
+    match matches.values_of("size") {
+        Some(values) => {
+            let values: Vec<_> = values.collect();
+            width = values[0].parse().expect("Width must be a number");
+            height = values[1].parse().expect("Height must be a number");
+        },
+        None => {},
+    };
 
     let mut app = App::new(floating, width, height);
 
