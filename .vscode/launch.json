@@ -7,7 +7,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Launch",
-            "program": "${workspaceFolder}/target/debug/rimvi",
+            "program": "${workspaceFolder}/target/debug/rim",
             "args": ["/home/nimaoth/wallpapers"],
             "cwd": "${workspaceFolder}"
         }

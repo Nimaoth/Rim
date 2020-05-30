@@ -12,10 +12,26 @@ fn main() {
         (author: "Nimaoth")
         (about: "View images")
         (@arg file: +required +takes_value "Display this file or files in this directory")
+        (@arg floating: -f --float "Open as floating window")
+        (@arg size: -s --size +takes_value +multiple #{2, 2} "Size of floating window")
     )
     .get_matches();
 
-    let mut app = App::new();
+    let mut floating = false;
+    let (mut width, mut height) = (1000, 900);
+    if matches.is_present("floating") {
+        floating = true;
+        match matches.values_of("size") {
+            Some(values) => {
+                let values: Vec<_> = values.collect();
+                width = values[0].parse().expect("Width must be a number");
+                height = values[1].parse().expect("Height must be a number");
+            },
+            None => {},
+        };
+    }
+
+    let mut app = App::new(floating, width, height);
 
     let path = PathBuf::from(matches.value_of("file").unwrap()).canonicalize().expect("File doesn't exist");
     if Path::is_file(&path) {

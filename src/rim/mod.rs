@@ -5,3 +5,4 @@ pub mod view;
 pub mod layout;
 pub mod app;
 pub mod vec;
+pub mod open_file_dialog;

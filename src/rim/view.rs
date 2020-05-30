@@ -79,14 +79,17 @@ impl View {
         }
     }
 
-    pub fn render(&mut self, ui: &imgui::Ui, title_bar: bool) {
+    pub fn render(&mut self, ui: &imgui::Ui, title_bar: bool, focus: bool) {
         let title: String = self.images[0].path.to_str().unwrap().to_owned();
         let title = im_str!("{}", title);
 
         let tok = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
         defer!(tok.pop(ui));
 
+
         imgui::Window::new(&title)
+            .focus_on_appearing(false)
+            .focused(self.selected && focus)
             .position([self.x as f32, self.y as f32], imgui::Condition::Always)
             .size(
                 [self.width as f32, self.height as f32],
@@ -140,7 +143,7 @@ impl View {
                 let [content_region_width, content_region_height] = ui.content_region_avail();
                 let content_region_as = content_region_width / content_region_height;
 
-                if self.selected && !ui.is_key_down(sdl2::keyboard::Scancode::Application as u32) {
+                if ui.is_window_focused() && self.selected && !ui.is_key_down(sdl2::keyboard::Scancode::Application as u32) {
                     if ui.is_key_pressed(sdl2::keyboard::Scancode::Space as u32) {
                         self.zoom = 1.0;
                         self.rect_pos = Vec2::zero();
