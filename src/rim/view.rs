@@ -245,9 +245,11 @@ impl View {
         GL!(BindTexture(TEXTURE_2D, 0));
     }
 
-    pub fn reload(&self) {
+    pub fn reload(&self) -> Result<(), String> {
         for img in self.images.iter() {
-            img.reload_from_disk().unwrap_or(());
+            img.reload_from_disk()?;
         }
+
+        Ok(())
     }
 }
