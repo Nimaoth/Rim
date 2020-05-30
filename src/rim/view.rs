@@ -140,6 +140,7 @@ impl View {
                 tok.pop(ui);
 
                 
+                let content_region_max = ui.content_region_max();
                 let [content_region_width, content_region_height] = ui.content_region_avail();
                 let content_region_as = content_region_width / content_region_height;
 
@@ -206,16 +207,16 @@ impl View {
                         uv0.y = -(rect_min.y - border) / rect_size.y;
                         rect_min.y = border;
                     }
-                    if rect_max.x >= content_region_width - border {
-                        uv1.x = 1.0 - (rect_max.x - content_region_width + border) / rect_size.x;
-                        rect_max.x = content_region_width - border - 1.0;
+                    if rect_max.x >= content_region_max[0] - border {
+                        uv1.x = 1.0 - (rect_max.x - content_region_max[0] + border) / rect_size.x;
+                        rect_max.x = content_region_max[0] - border - 1.0;
                     }
-                    if rect_max.y >= content_region_height - border {
-                        uv1.y = 1.0 - (rect_max.y - content_region_height + border) / rect_size.y;
-                        rect_max.y = content_region_height - border - 1.0;
+                    if rect_max.y >= content_region_max[1] - border {
+                        uv1.y = 1.0 - (rect_max.y - content_region_max[1] + border) / rect_size.y;
+                        rect_max.y = content_region_max[1] - border - 1.0;
                     }
 
-                    let pos = rect_min.into();
+                    let pos = (rect_min + ui.window_content_region_min().into()).into();
                     let size = rect_max - rect_min;
                     ui.set_cursor_pos(pos);
                     unsafe {
