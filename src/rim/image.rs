@@ -16,7 +16,10 @@ impl Image {
     pub fn new(path: &Path) -> Result<Rc<Image>, ()> {
         let image = match image::open(path) {
             Ok(img) => img,
-            Err(_) => return Err(()),
+            Err(err) => {
+                println!("{:?}", err);
+                return Err(())
+            },
         };
 
         let img_data = image.to_rgb();

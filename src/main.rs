@@ -6,6 +6,8 @@ use std::path::*;
 mod rim;
 use rim::app::App;
 
+use rim::util::*;
+
 fn main() {
     let matches = clap_app!(myapp =>
         (version: "0.0.4")
@@ -31,23 +33,29 @@ fn main() {
         None => {},
     };
 
+    println!("{}, {}, {}", floating, width, height);
+
     let mut app = App::new(floating, width, height);
 
-    let path = PathBuf::from(matches.value_of("file").unwrap()).canonicalize().expect("File doesn't exist");
+    let path = get_absolute_path(&PathBuf::from(matches.value_of("file").unwrap()));
     if Path::is_file(&path) {
         match app.open_image(Path::new(&path)) {
             Ok(_) => {},
-            Err(_) => eprintln!("Failed to load image {:?}", path),
+            Err(_) => {
+                eprintln!("Failed to load image {:?}", path);
+                return;
+            },
         }
     } else if Path::is_dir(&path) {
+        let mut count = 0;
         match std::fs::read_dir(path) {
             Ok(dir) => {
                 for image_path in dir.into_iter() {
                     match image_path {
                         Ok(path) => {
-                            let path = path.path().canonicalize().unwrap();
+                            let path = get_absolute_path(&path.path());
                             match app.open_image(&path) {
-                                Ok(_) => {},
+                                Ok(_) => count += 1,
                                 Err(_) => eprintln!("Failed to load image '{:?}'", &path),
                             }
                         }
@@ -56,6 +64,9 @@ fn main() {
                 }
             }
             Err(msg) => eprintln!("Failed to load files in directory: {}", msg),
+        }
+        if count == 0 {
+            return;
         }
     } else {
         eprintln!("path is not a file or directory: {:?}", path);

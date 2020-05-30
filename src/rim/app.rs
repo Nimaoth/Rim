@@ -12,6 +12,7 @@ use super::view::{View, FilterMethod};
 use super::image::Image;
 use super::layout::{Layout, GridLayout, LayoutDirection};
 use super::open_file_dialog::OpenFileDialog;
+use super::util::*;
 
 pub struct App {
     views           : Vec<View>,
@@ -27,7 +28,7 @@ pub struct App {
     imgui_sdl2      : imgui_sdl2::ImguiSdl2,
     opengl_renderer : imgui_opengl_renderer::Renderer,
 
-    dir_watcher     : notify::INotifyWatcher,
+    dir_watcher     : notify::RecommendedWatcher,
     dir_watcher_recv: mpsc::Receiver<notify::DebouncedEvent>,
 
     show_titlebars  : bool,
@@ -97,10 +98,7 @@ impl App {
 
     pub fn open_image(&mut self, path: &Path) -> Result<(), ()> {
         println!("open {:?}", path);
-        let path = match path.canonicalize() {
-            Ok(path) => path,
-            Err(_) => path.to_owned(),
-        };
+        let path = get_absolute_path(path);
 
         match self.find_image_by_path(&path) {
             Some(_) => Ok(()),

@@ -1,6 +1,7 @@
 use imgui::*;
 use std::path::*;
 use std::fs;
+use super::util::get_absolute_path;
 
 pub struct OpenFileDialog {
     current_dir : String,
@@ -126,7 +127,7 @@ impl OpenFileDialog {
 
     fn update_list(&mut self){ 
         self.item_list.clear();
-        for item in fs::read_dir(PathBuf::from(&self.current_dir).canonicalize().unwrap()).unwrap() {
+        for item in fs::read_dir(get_absolute_path(&PathBuf::from(&self.current_dir))).unwrap() {
             match item {
                 Ok(item) => {
                     let mut name = item.file_name().to_str().unwrap().to_owned();
