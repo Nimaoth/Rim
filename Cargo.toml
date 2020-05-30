@@ -1,5 +1,5 @@
 [package]
-name = "rimvi"
+name = "rim"
 version = "0.1.0"
 authors = ["Nico <nicolas.otremba@web.de>"]
 edition = "2018"

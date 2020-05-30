@@ -44,7 +44,7 @@ impl App {
         
         let video_subsystem = sdl.video().unwrap();
         let window = video_subsystem
-            .window("Game", 1000, 900)
+            .window("Rim", 1000, 900)
             .opengl()
             .resizable()
             .build()

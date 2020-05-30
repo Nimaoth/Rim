@@ -8,7 +8,7 @@ use rim::app::App;
 
 fn main() {
     let matches = clap_app!(myapp =>
-        (version: "0.0.3")
+        (version: "0.0.4")
         (author: "Nimaoth")
         (about: "View images")
         (@arg file: +required +takes_value "Display this file or files in this directory")

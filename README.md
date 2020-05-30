@@ -1,4 +1,4 @@
-# Rimvi
+# Rim
 Simple application for viewing one or multiple images.
 It automatically reloads files from disk when they change.
 
