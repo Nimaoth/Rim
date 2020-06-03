@@ -41,24 +41,16 @@ impl OpenFileDialog {
             .build(|| {
                 let mut selected = self.selected;
                 if ui.is_window_focused() && !ui.is_key_down(sdl2::keyboard::Scancode::Application as u32) {
-                    if ui.is_key_pressed(sdl2::keyboard::Scancode::I as u32) {
-                        if !self.item_list.is_empty() {
-                            selected = (selected + self.item_list.len() - 1) % self.item_list.len();
-                        } else {
-                            selected = 0;
-                        }
+                    if ui.is_key_pressed(sdl2::keyboard::Scancode::I as u32) || ui.is_key_pressed(sdl2::keyboard::Scancode::Up as u32) {
+                        selected = (selected + self.item_list.len() - 1) % self.item_list.len();
                     }
-                    if ui.is_key_pressed(sdl2::keyboard::Scancode::K as u32) {
-                        if !self.item_list.is_empty() {
-                            selected = (selected + 1) % self.item_list.len();
-                        } else {
-                            selected = 0;
-                        }
+                    if ui.is_key_pressed(sdl2::keyboard::Scancode::K as u32) || ui.is_key_pressed(sdl2::keyboard::Scancode::Down as u32) {
+                        selected = (selected + 1) % self.item_list.len();
                     }
-                    if ui.is_key_pressed(sdl2::keyboard::Scancode::J as u32) {
+                    if ui.is_key_pressed(sdl2::keyboard::Scancode::J as u32) || ui.is_key_pressed(sdl2::keyboard::Scancode::Left as u32) {
                         self.move_dir_up();
                     }
-                    if ui.is_key_pressed(sdl2::keyboard::Scancode::L as u32) {
+                    if ui.is_key_pressed(sdl2::keyboard::Scancode::L as u32) || ui.is_key_pressed(sdl2::keyboard::Scancode::Right as u32) {
                         match self.get_selected() {
                             Some(dir) => self.move_dir_down(&dir),
                             None => {}
@@ -66,42 +58,58 @@ impl OpenFileDialog {
                     }
                     if ui.is_key_pressed(sdl2::keyboard::Scancode::Return as u32) {
                         result = match self.get_selected() {
-                            Some(item) => {
+                            Some(item) => if item != ".." {
                                 let mut path = PathBuf::from(&self.current_dir);
                                 path.push(item);
+                                self.close();
                                 Some(path)
+                            } else {
+                                self.move_dir_up();
+                                None
                             },
                             None => None,
                         };
-                        self.close();
                     }
                     if ui.is_key_pressed(sdl2::keyboard::Scancode::Space as u32) {
                         result = match self.get_selected() {
-                            Some(item) => {
+                            Some(item) => if item != ".." {
                                 let mut path = PathBuf::from(&self.current_dir);
                                 path.push(item);
                                 Some(path)
-                            },
+                            } else {None},
                             None => None,
                         };
                     }
                     if ui.is_key_pressed(sdl2::keyboard::Scancode::Escape as u32) {
                         self.close();
                     }
-
                 }
 
+                let mut clicked_on_item = None;
                 for (i, path) in self.item_list.iter().enumerate() {
                     let p = im_str!("{}", path);
                     if Selectable::new(&p)
                         .selected(i == self.selected)
                         .build(ui) {
+                        clicked_on_item = Some(path.clone());
                     }
+
                     if i == selected {
                         ui.set_item_default_focus();
                         unsafe {
                             imgui::sys::igSetScrollHereY(0.5);
                         }
+                    }
+                }
+
+                if let Some(item) = clicked_on_item {
+                    let mut path = PathBuf::from(&self.current_dir);
+                    path.push(&item);
+                    if path.is_dir() {
+                        self.move_dir_down(&item);
+                    } else {
+                        result = Some(path);
+                        self.close();
                     }
                 }
 
@@ -127,6 +135,7 @@ impl OpenFileDialog {
 
     fn update_list(&mut self){ 
         self.item_list.clear();
+        self.item_list.push("..".to_owned());
         for item in fs::read_dir(get_absolute_path(&PathBuf::from(&self.current_dir))).unwrap() {
             match item {
                 Ok(item) => {
@@ -141,12 +150,9 @@ impl OpenFileDialog {
                 Err(_) => {}
             }
         }
-        self.item_list.sort();
-        if !self.item_list.is_empty() {
-            self.selected %= self.item_list.len();
-        } else {
-            self.selected = 0;
-        }
+
+        self.item_list[1..].sort();
+        self.selected %= self.item_list.len();
     }
 
     fn move_dir_up(&mut self) {
@@ -163,6 +169,8 @@ impl OpenFileDialog {
     fn move_dir_down(&mut self, dir: &str) {
         let mut path = PathBuf::from(&self.current_dir);
         path.push(dir);
+        path = get_absolute_path(&path);
+
         if path.is_dir() {
             self.current_dir = path.to_str().unwrap().to_owned();
             self.update_list();

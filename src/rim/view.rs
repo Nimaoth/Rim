@@ -41,13 +41,14 @@ pub enum FilterMethod {
 }
 
 pub struct View {
+    id              : u32,
     pub x           : i32,
     pub y           : i32,
     pub width       : i32,
     pub height      : i32,
-    pub images      : Vec<Rc<Image>>,
+    pub image       : Rc<Image>,
 
-    filter_method   : FilterMethod,
+    pub filter_method : FilterMethod,
 
     rect_pos        : Vec2,
     zoom            : f32,
@@ -56,16 +57,20 @@ pub struct View {
     zoom_speed      : f32,
 
     pub selected    : bool,
+
+    frozen              : bool,
+    pub history_enabled : bool,
 }
 
 impl View {
-    pub fn new() -> View {
+    pub fn new(id: u32, image: Rc<Image>, enable_history: bool) -> View {
         View {
+            id              : id,
             x               : 0,
             y               : 0,
             width           : 400,
             height          : 400,
-            images          : Vec::new(),
+            image           : image,
 
             filter_method   : FilterMethod::Nearest,
 
@@ -76,16 +81,32 @@ impl View {
             zoom_speed      : 3.0,
 
             selected        : false,
+
+            frozen          : false,
+            history_enabled : enable_history,
         }
     }
 
-    pub fn render(&mut self, ui: &imgui::Ui, title_bar: bool, focus: bool) {
-        let title: String = self.images[0].path.to_str().unwrap().to_owned();
-        let title = im_str!("{}", title);
+    pub fn is_frozen(&self) -> bool {
+        self.frozen
+    }
+
+    pub fn freeze(&mut self) {
+        self.frozen = true;
+    }
+
+    pub fn render(&mut self, ui: &imgui::Ui, title_bar: bool, focus: bool) -> bool {
+        let title: String = self.image.path.to_str().unwrap().to_owned();
+        let title = if self.frozen {
+            im_str!("{} - past##{}", title, self.id)
+        } else {
+            im_str!("{}##{}", title, self.id)
+        };
 
         let tok = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0, 0.0]));
         defer!(tok.pop(ui));
 
+        let mut was_selected = false;
 
         imgui::Window::new(&title)
             .focus_on_appearing(false)
@@ -102,49 +123,21 @@ impl View {
             .scroll_bar(false)
             .scrollable(false)
             .build(&ui, || {
-                ui.menu_bar(|| {
-                    imgui::MenuItem::new(im_str!("File"))
-                        .build(ui);
-                });
-                
-                let context_menu_name = im_str!("View Context Menu {:?}", self.images[0].path);
-                let tok = ui.push_style_var(imgui::StyleVar::WindowPadding([7.0, 7.0]));
-                ui.popup(&context_menu_name, || {
-                    ui.text(self.images[0].path.to_str().unwrap_or(""));
-                    ui.separator();
-                    if ui.small_button(im_str!("Reload from disk")) {
-                        for img in self.images.iter() {
-                            img.reload_from_disk().unwrap_or(());
-                        }
-                    }
-
-                    
-                    if let Some(tok) = ui.begin_menu(im_str!("Sampling Method"), true) {
-                        let mut changed = false;
-                        changed |= ui.radio_button(im_str!("Nearest"), &mut self.filter_method, FilterMethod::Nearest);
-                        changed |= ui.radio_button(im_str!("Linear"), &mut self.filter_method, FilterMethod::Linear);
-                        tok.end(ui);
-
-                        if changed {
-                            self.set_filter_menthod(self.filter_method);
-                        }
-                    }
-
-                });
-
                 if ui.is_mouse_hovering_rect(
                     ui.window_pos(), 
-                    (Vec2::from(ui.window_pos()) + Vec2::from(ui.window_size())).into()) && ui.is_mouse_down(imgui::MouseButton::Right) {
-                    ui.open_popup(&context_menu_name);
+                    (Vec2::from(ui.window_pos()) + Vec2::from(ui.window_size())).into())
+                    && (ui.is_mouse_clicked(imgui::MouseButton::Right) || ui.is_mouse_clicked(imgui::MouseButton::Left)) {
+                    was_selected = true;
                 }
-                tok.pop(ui);
 
-                
                 let content_region_max = ui.content_region_max();
                 let [content_region_width, content_region_height] = ui.content_region_avail();
                 let content_region_as = content_region_width / content_region_height;
-
-                if ui.is_window_focused() && self.selected && !ui.is_key_down(sdl2::keyboard::Scancode::Application as u32) {
+                let win = ui.is_key_down(sdl2::keyboard::Scancode::Application as u32);
+                let ctrl = ui.is_key_down(sdl2::keyboard::Scancode::LCtrl as u32) || ui.is_key_down(sdl2::keyboard::Scancode::RCtrl as u32);
+                let shift = ui.is_key_down(sdl2::keyboard::Scancode::LShift as u32) || ui.is_key_down(sdl2::keyboard::Scancode::RShift as u32);
+                
+                if ui.is_window_focused() && self.selected && !win {
                     if ui.is_key_pressed(sdl2::keyboard::Scancode::Space as u32) {
                         self.zoom = 1.0;
                         self.rect_pos = Vec2::zero();
@@ -167,87 +160,108 @@ impl View {
                     if ui.is_key_down(sdl2::keyboard::Scancode::Comma as u32) {
                         self.zoom /= 1.0 + self.zoom_speed * 0.01;
                     }
+
+                    if !ctrl {
+                        if shift {
+                            if ui.is_key_down(sdl2::keyboard::Scancode::Up as u32) {
+                                self.zoom *= 1.0 + self.zoom_speed * 0.01;
+                            }
+                            if ui.is_key_down(sdl2::keyboard::Scancode::Down as u32) {
+                                self.zoom /= 1.0 + self.zoom_speed * 0.01;
+                            }
+                        } else {
+                            if ui.is_key_down(sdl2::keyboard::Scancode::Up as u32) {
+                                self.rect_pos = self.rect_pos + Vec2::new(0.0, -self.pan_speed / self.zoom);
+                            }
+                            if ui.is_key_down(sdl2::keyboard::Scancode::Down as u32) {
+                                self.rect_pos = self.rect_pos + Vec2::new(0.0, self.pan_speed / self.zoom);
+                            }
+                            if ui.is_key_down(sdl2::keyboard::Scancode::Left as u32) {
+                                self.rect_pos = self.rect_pos + Vec2::new(-self.pan_speed / self.zoom, 0.0);
+                            }
+                            if ui.is_key_down(sdl2::keyboard::Scancode::Right as u32) {
+                                self.rect_pos = self.rect_pos + Vec2::new(self.pan_speed / self.zoom, 0.0);
+                            }
+                        }
+                    }
                 }
 
-                for img in self.images.iter() {
-                    let image_as = img.width as f32 / img.height as f32;
-                    let (width, height) = if image_as > content_region_as {
-                        (content_region_width, content_region_width / image_as)
-                    } else {
-                        (content_region_height * image_as, content_region_height)
-                    };
+                let image_as = self.image.width as f32 / self.image.height as f32;
+                let (width, height) = if image_as > content_region_as {
+                    (content_region_width, content_region_width / image_as)
+                } else {
+                    (content_region_height * image_as, content_region_height)
+                };
 
 
-                    self.rect_pos.x = clamp(self.rect_pos.x, -width * 0.5, width * 0.5);
-                    self.rect_pos.y = clamp(self.rect_pos.y, -height * 0.5, height * 0.5);
+                self.rect_pos.x = clamp(self.rect_pos.x, -width * 0.5, width * 0.5);
+                self.rect_pos.y = clamp(self.rect_pos.y, -height * 0.5, height * 0.5);
 
+                // center
+                let center_pos = Vec2::new(0.0, 0.0);
+                let camspace = center_pos - self.rect_pos * self.zoom;
+                let viewspace = camspace + Vec2::new(content_region_width, content_region_height) * 0.5;
+                let mut rect_min = viewspace - Vec2::new(width, height) * 0.5 * self.zoom;
+                let mut rect_max = viewspace + Vec2::new(width, height) * 0.5 * self.zoom;
+                let rect_size = rect_max - rect_min;
 
-                    // center
-                    let center_pos = Vec2::new(0.0, 0.0);
-                    let camspace = center_pos - self.rect_pos * self.zoom;
-                    let viewspace = camspace + Vec2::new(content_region_width, content_region_height) * 0.5;
-                    let mut rect_min = viewspace - Vec2::new(width, height) * 0.5 * self.zoom;
-                    let mut rect_max = viewspace + Vec2::new(width, height) * 0.5 * self.zoom;
-                    let rect_size = rect_max - rect_min;
+                let mut uv0 = Vec2::zero();
+                let mut uv1 = Vec2::new(1.0, 1.0);
+                
+                if rect_max.x <= 0.0 || rect_max.y <= 0.0 || rect_min.x >= content_region_width || rect_min.y >= content_region_height {
+                    return;
+                }
 
-                    let mut uv0 = Vec2::zero();
-                    let mut uv1 = Vec2::new(1.0, 1.0);
-                    
-                    if rect_max.x <= 0.0 || rect_max.y <= 0.0 || rect_min.x >= content_region_width || rect_min.y >= content_region_height {
-                        continue;
-                    }
+                let border = 0.0;
 
-                    let border = 0.0;
+                if rect_min.x < border {
+                    uv0.x = -(rect_min.x - border) / rect_size.x;
+                    rect_min.x = border;
+                }
+                if rect_min.y < border {
+                    uv0.y = -(rect_min.y - border) / rect_size.y;
+                    rect_min.y = border;
+                }
+                if rect_max.x >= content_region_max[0] - border {
+                    uv1.x = 1.0 - (rect_max.x - content_region_max[0] + border) / rect_size.x;
+                    rect_max.x = content_region_max[0] - border - 1.0;
+                }
+                if rect_max.y >= content_region_max[1] - border {
+                    uv1.y = 1.0 - (rect_max.y - content_region_max[1] + border) / rect_size.y;
+                    rect_max.y = content_region_max[1] - border - 1.0;
+                }
 
-                    if rect_min.x < border {
-                        uv0.x = -(rect_min.x - border) / rect_size.x;
-                        rect_min.x = border;
-                    }
-                    if rect_min.y < border {
-                        uv0.y = -(rect_min.y - border) / rect_size.y;
-                        rect_min.y = border;
-                    }
-                    if rect_max.x >= content_region_max[0] - border {
-                        uv1.x = 1.0 - (rect_max.x - content_region_max[0] + border) / rect_size.x;
-                        rect_max.x = content_region_max[0] - border - 1.0;
-                    }
-                    if rect_max.y >= content_region_max[1] - border {
-                        uv1.y = 1.0 - (rect_max.y - content_region_max[1] + border) / rect_size.y;
-                        rect_max.y = content_region_max[1] - border - 1.0;
-                    }
-
-                    let pos = (rect_min + ui.window_content_region_min().into()).into();
-                    let size = rect_max - rect_min;
-                    ui.set_cursor_pos(pos);
-                    unsafe {
-                        imgui::Image::new(std::mem::transmute(img.renderer_id), [size.x, size.y])
-                            .uv0(uv0.into())
-                            .uv1(uv1.into())
-                            .build(&ui);
-                    }
+                let pos = (rect_min + ui.window_content_region_min().into()).into();
+                let size = rect_max - rect_min;
+                ui.set_cursor_pos(pos);
+                unsafe {
+                    imgui::Image::new(std::mem::transmute(self.image.renderer_id), [size.x, size.y])
+                        .uv0(uv0.into())
+                        .uv1(uv1.into())
+                        .build(&ui);
                 }
             });
+
+        return was_selected;
     }
 
     pub fn set_filter_menthod(&mut self, filter_method: FilterMethod) {
         self.filter_method = filter_method;
-        for img in self.images.iter() {
-            GL!(BindTexture(TEXTURE_2D, img.renderer_id as u32));
-            
-            let filter_method = match self.filter_method {
-                FilterMethod::Linear => gl::LINEAR,
-                FilterMethod::Nearest => gl::NEAREST,
-            } as i32;
-            
-            GL!(TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, filter_method));
-            GL!(TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, filter_method));
-        }
+        GL!(BindTexture(TEXTURE_2D, self.image.renderer_id as u32));
+        
+        let filter_method = match self.filter_method {
+            FilterMethod::Linear => gl::LINEAR,
+            FilterMethod::Nearest => gl::NEAREST,
+        } as i32;
+        
+        GL!(TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, filter_method));
+        GL!(TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, filter_method));
         GL!(BindTexture(TEXTURE_2D, 0));
     }
 
     pub fn reload(&self) -> Result<(), String> {
-        for img in self.images.iter() {
-            img.reload_from_disk()?;
+        if !self.frozen {
+            self.image.reload_from_disk()?;
         }
 
         Ok(())

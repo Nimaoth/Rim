@@ -39,7 +39,7 @@ fn main() {
 
     let path = get_absolute_path(&PathBuf::from(matches.value_of("file").unwrap()));
     if Path::is_file(&path) {
-        match app.open_image(Path::new(&path)) {
+        match app.open_image(Path::new(&path), false) {
             Ok(_) => {},
             Err(_) => {
                 eprintln!("Failed to load image {:?}", path);
@@ -54,7 +54,7 @@ fn main() {
                     match image_path {
                         Ok(path) => {
                             let path = get_absolute_path(&path.path());
-                            match app.open_image(&path) {
+                            match app.open_image(&path, false) {
                                 Ok(_) => count += 1,
                                 Err(_) => eprintln!("Failed to load image '{:?}'", &path),
                             }

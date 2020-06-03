@@ -16,6 +16,7 @@ use super::util::*;
 
 pub struct App {
     views           : Vec<View>,
+    next_view_id    : u32,
     layout          : Box<dyn Layout>,
     layout_direction: LayoutDirection,
     auto_layout_dir : bool,
@@ -75,6 +76,8 @@ impl App {
 
         App {
             views           : Vec::new(),
+            next_view_id    : 0,
+
             layout          : GridLayout::new(),
             layout_direction: LayoutDirection::Vertical,
             auto_layout_dir : true,
@@ -100,22 +103,22 @@ impl App {
         }
     }
 
-    pub fn open_image(&mut self, path: &Path) -> Result<(), ()> {
+    pub fn open_image(&mut self, path: &Path, enable_history: bool) -> Result<usize, ()> {
         println!("open {:?}", path);
         let path = get_absolute_path(path);
 
         match self.find_image_by_path(&path) {
-            Some(_) => Ok(()),
+            Some(index) => Ok(index),
             None => {
                 println!("Opening image {:?}", path);
 
                 match Image::new(&path) {
                     Ok(image) => {
-                        let mut view = View::new();
-                        view.images.push(image.clone());
-                        self.views.push(view);
+                        let id = self.next_view_id;
+                        self.next_view_id += 1;
+                        self.views.push(View::new(id, image.clone(), enable_history));
                         self.dir_watcher.watch(path, notify::RecursiveMode::NonRecursive).unwrap_or(());
-                        Ok(())
+                        Ok(self.views.len() - 1)
                     },
                     Err(msg) => {
                         self.error_msg = Some(msg);
@@ -126,16 +129,227 @@ impl App {
         }
     }
 
-    fn find_image_by_path(&mut self, path: &Path) -> Option<&Image> {
-        for view in self.views.iter() {
-            for image in view.images.iter() {
-                if image.path == path {
-                    return Some(image);
-                }
+    fn find_image_by_path(&mut self, path: &Path) -> Option<usize> {
+        for (i, view) in self.views.iter().enumerate() {
+            if !view.is_frozen() && view.image.path == path {
+                return Some(i);
             }
         }
 
         None
+    }
+
+    fn open_file_open_dialog(&mut self) {
+        let path = if self.selected < self.views.len() {
+            let sel_path: &Path = &self.views[self.selected].image.path;
+            match sel_path.parent() {
+                Some(parent) => parent.to_str().unwrap().to_owned(),
+                None => sel_path.to_str().unwrap().to_owned(),
+            }
+        } else {
+            "/home".to_owned()
+        };
+        self.open_file_dialog.open(path);
+    }
+
+    fn handle_event(&mut self, scancode: sdl2::keyboard::Scancode, keymod: sdl2::keyboard::Mod, close_view: &mut bool, open_file_open_dialog: &mut bool) -> bool {
+        use sdl2::keyboard::*;
+
+        let ctrl = Mod::LCTRLMOD | Mod::RCTRLMOD;
+        let shift = Mod::LSHIFTMOD | Mod::RSHIFTMOD;
+
+        if keymod.intersects(ctrl) && keymod.intersects(shift) {
+            match scancode {
+                // move selected
+                Scancode::Up => {
+                    if self.selected < self.views.len() {
+                        let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 0, -1, self.layout_direction);
+                        self.views.swap(self.selected, new_selected);
+                        self.selected = new_selected;
+                    }
+                },
+                Scancode::Down => {
+                    if self.selected < self.views.len() {
+                        let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 0, 1, self.layout_direction);
+                        self.views.swap(self.selected, new_selected);
+                        self.selected = new_selected;
+                    }
+                },
+                Scancode::Left => {
+                    if self.selected < self.views.len() {
+                        let new_selected = self.layout.get_next_index(self.views.len(), self.selected, -1, 0, self.layout_direction);
+                        self.views.swap(self.selected, new_selected);
+                        self.selected = new_selected;
+                    }
+                },
+                Scancode::Right => {
+                    if self.selected < self.views.len() {
+                        let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 1, 0, self.layout_direction);
+                        self.views.swap(self.selected, new_selected);
+                        self.selected = new_selected;
+                    }
+                },
+
+                //
+                _ => return false,
+            }
+        } else if keymod.intersects(ctrl) {
+            match scancode {
+                Scancode::R => if self.selected < self.views.len() {
+                    match self.views[self.selected].reload() {
+                        Err(msg) => self.error_msg = Some(msg),
+                        Ok(_) => {},
+                    }
+                },
+
+                // filter method
+                Scancode::L => if self.selected < self.views.len() {
+                    self.views[self.selected].set_filter_menthod(FilterMethod::Linear);
+                },
+                Scancode::N => if self.selected < self.views.len() {
+                    self.views[self.selected].set_filter_menthod(FilterMethod::Nearest);
+                },
+
+                // layout direction 
+                Scancode::H => {
+                    self.auto_layout_dir = false;
+                    self.layout_direction = LayoutDirection::Horizontal;
+                },
+                Scancode::V => {
+                    self.auto_layout_dir = false;
+                    self.layout_direction = LayoutDirection::Vertical;
+                },
+                Scancode::A => self.auto_layout_dir = true,
+
+                // close selected
+                Scancode::W => *close_view = true,
+
+                // open new
+                Scancode::O => *open_file_open_dialog = true,
+
+                // maximize
+                Scancode::M => {
+                    if self.maximized {
+                        self.window.set_fullscreen(sdl2::video::FullscreenType::Off).unwrap_or(());
+                    } else {
+                        self.window.set_fullscreen(sdl2::video::FullscreenType::True).unwrap_or(());
+                    }
+                    self.maximized = self.window.fullscreen_state() == sdl2::video::FullscreenType::True;
+                },
+
+                // move selection
+                Scancode::Up => if self.selected < self.views.len() {
+                    self.views[self.selected].selected = false;
+                    self.selected = self.layout.get_next_index(self.views.len(), self.selected, 0, -1, self.layout_direction);
+                    self.views[self.selected].selected = true;
+                },
+                Scancode::Down => if self.selected < self.views.len() {
+                    self.views[self.selected].selected = false;
+                    self.selected = self.layout.get_next_index(self.views.len(), self.selected, 0, 1, self.layout_direction);
+                    self.views[self.selected].selected = true;
+                },
+                Scancode::Left => if self.selected < self.views.len() {
+                    self.views[self.selected].selected = false;
+                    self.selected = self.layout.get_next_index(self.views.len(), self.selected, -1, 0, self.layout_direction);
+                    self.views[self.selected].selected = true;
+                },
+                Scancode::Right => if self.selected < self.views.len() {
+                    self.views[self.selected].selected = false;
+                    self.selected = self.layout.get_next_index(self.views.len(), self.selected, 1, 0, self.layout_direction);
+                    self.views[self.selected].selected = true;
+                },
+
+                //
+                _ => return false,
+            }
+        } else if keymod.intersects(shift) {
+            match scancode {
+                // move selected
+                Scancode::I => {
+                    if self.selected < self.views.len() {
+                        let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 0, -1, self.layout_direction);
+                        self.views.swap(self.selected, new_selected);
+                        self.selected = new_selected;
+                    }
+                },
+                Scancode::K => {
+                    if self.selected < self.views.len() {
+                        let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 0, 1, self.layout_direction);
+                        self.views.swap(self.selected, new_selected);
+                        self.selected = new_selected;
+                    }
+                },
+                Scancode::J => {
+                    if self.selected < self.views.len() {
+                        let new_selected = self.layout.get_next_index(self.views.len(), self.selected, -1, 0, self.layout_direction);
+                        self.views.swap(self.selected, new_selected);
+                        self.selected = new_selected;
+                    }
+                },
+                Scancode::L => {
+                    if self.selected < self.views.len() {
+                        let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 1, 0, self.layout_direction);
+                        self.views.swap(self.selected, new_selected);
+                        self.selected = new_selected;
+                    }
+                },
+
+                //
+                _ => return false,
+            }
+        } else {
+            match scancode {
+                // reload
+                Scancode::F5 => if self.selected < self.views.len() {
+                    match self.views[self.selected].reload() {
+                        Err(msg) => self.error_msg = Some(msg),
+                        Ok(_) => {},
+                    }
+                },
+
+                // switch selection
+                // Scancode::Tab, keymod: Mod::LSHIFTMOD => {
+                //     if self.selected < self.views.len() {
+                //         self.views[self.selected].selected = false;
+                //         self.selected =(self.selected + self.views.len() - 1) % self.views.len();
+                //         self.views[self.selected].selected = true;
+                //     }
+                // },
+                // Scancode::Tab => {
+                //     if self.selected < self.views.len() {
+                //         self.views[self.selected].selected = false;
+                //         self.selected = (self.selected + 1) % self.views.len();
+                //         self.views[self.selected].selected = true;
+                //     }
+                // },
+
+                Scancode::I => if self.selected < self.views.len() {
+                    self.views[self.selected].selected = false;
+                    self.selected = self.layout.get_next_index(self.views.len(), self.selected, 0, -1, self.layout_direction);
+                    self.views[self.selected].selected = true;
+                },
+                Scancode::K => if self.selected < self.views.len() {
+                    self.views[self.selected].selected = false;
+                    self.selected = self.layout.get_next_index(self.views.len(), self.selected, 0, 1, self.layout_direction);
+                    self.views[self.selected].selected = true;
+                },
+                Scancode::J => if self.selected < self.views.len() {
+                    self.views[self.selected].selected = false;
+                    self.selected = self.layout.get_next_index(self.views.len(), self.selected, -1, 0, self.layout_direction);
+                    self.views[self.selected].selected = true;
+                },
+                Scancode::L => if self.selected < self.views.len() {
+                    self.views[self.selected].selected = false;
+                    self.selected = self.layout.get_next_index(self.views.len(), self.selected, 1, 0, self.layout_direction);
+                    self.views[self.selected].selected = true;
+                },
+
+                //
+                _ => return false,
+            }
+        }
+
+        return true;
     }
 
     pub fn run(&mut self) {
@@ -145,6 +359,9 @@ impl App {
 
         let mut event_pump = self.sdl.event_pump().unwrap();
         'main: loop {
+            let mut open_file_open_dialog = false;
+            let mut close_view = false;
+
             for event in event_pump.poll_iter() {
                 if self.open_file_dialog.is_open() {
                     use sdl2::event::Event;
@@ -163,185 +380,33 @@ impl App {
                     }
                 } else {
                     use sdl2::event::Event;
+                    use sdl2::keyboard::*;
+
                     match event {
-                        // reload
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::R), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::R), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::F5), .. } => {
-                            if self.selected < self.views.len() {
-                                match self.views[self.selected].reload() {
-                                    Err(msg) => self.error_msg = Some(msg),
-                                    Ok(_) => {},
-                                }
-                            }
-                        },
-
-                        // filter method
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::L), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::L), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
-                            if self.selected < self.views.len() {
-                                self.views[self.selected].set_filter_menthod(FilterMethod::Linear);
-                            }
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::N), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::N), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
-                            if self.selected < self.views.len() {
-                                self.views[self.selected].set_filter_menthod(FilterMethod::Nearest);
-                            }
-                        },
-
-                        // layout direction 
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::H), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::H), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
-                            self.auto_layout_dir = false;
-                            self.layout_direction = LayoutDirection::Horizontal;
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::V), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::V), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
-                            self.auto_layout_dir = false;
-                            self.layout_direction = LayoutDirection::Vertical;
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::A), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::A), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
-                            self.auto_layout_dir = true;
-                        },
-                        
-                        // close selected
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::W), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::W), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
-                            if self.selected < self.views.len() && self.views.len() > 1 {
-                                self.views.remove(self.selected);
-                                if !self.views.is_empty() {
-                                    self.selected = self.selected % self.views.len();
-                                    self.views[self.selected].selected = true;
-                                }
-                            }
-                        },
-
-                        // open new
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::O), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::O), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
-                            let path = if self.selected < self.views.len() {
-                                let sel_path: &Path = &self.views[self.selected].images[0].path;
-                                match sel_path.parent() {
-                                    Some(parent) => parent.to_str().unwrap().to_owned(),
-                                    None => sel_path.to_str().unwrap().to_owned(),
-                                }
-                            } else {
-                                "/home".to_owned()
-                            };
-                            self.open_file_dialog.open(path);
-                        },
-                        
-                        // move selected
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::I), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::I), keymod: sdl2::keyboard::Mod::RSHIFTMOD, .. } => {
-                            if self.selected < self.views.len() {
-                                let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 0, -1, self.layout_direction);
-                                self.views.swap(self.selected, new_selected);
-                                self.selected = new_selected;
-                            }
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::K), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::K), keymod: sdl2::keyboard::Mod::RSHIFTMOD, .. } => {
-                            if self.selected < self.views.len() {
-                                let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 0, 1, self.layout_direction);
-                                self.views.swap(self.selected, new_selected);
-                                self.selected = new_selected;
-                            }
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::J), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::J), keymod: sdl2::keyboard::Mod::RSHIFTMOD, .. } => {
-                            if self.selected < self.views.len() {
-                                let new_selected = self.layout.get_next_index(self.views.len(), self.selected, -1, 0, self.layout_direction);
-                                self.views.swap(self.selected, new_selected);
-                                self.selected = new_selected;
-                            }
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::L), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::L), keymod: sdl2::keyboard::Mod::RSHIFTMOD, .. } => {
-                            if self.selected < self.views.len() {
-                                let new_selected = self.layout.get_next_index(self.views.len(), self.selected, 1, 0, self.layout_direction);
-                                self.views.swap(self.selected, new_selected);
-                                self.selected = new_selected;
-                            }
-                        },
-
-                        // maximize
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::M), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::M), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
-                            if self.maximized {
-                                self.window.set_fullscreen(sdl2::video::FullscreenType::Off).unwrap_or(());
-                            } else {
-                                self.window.set_fullscreen(sdl2::video::FullscreenType::True).unwrap_or(());
-                            }
-                            self.maximized = self.window.fullscreen_state() == sdl2::video::FullscreenType::True;
-                        },
-
-                        // switch selection
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::Tab), keymod: sdl2::keyboard::Mod::LSHIFTMOD, .. } => {
-                            if self.selected < self.views.len() {
-                                self.views[self.selected].selected = false;
-                                self.selected =(self.selected + self.views.len() - 1) % self.views.len();
-                                self.views[self.selected].selected = true;
-                            }
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::Tab), .. } => {
-                            if self.selected < self.views.len() {
-                                self.views[self.selected].selected = false;
-                                self.selected = (self.selected + 1) % self.views.len();
-                                self.views[self.selected].selected = true;
-                            }
-                        },
-
-                        Event::KeyDown {  scancode: Some(sdl2::keyboard::Scancode::I), .. } => {
-                            if self.selected < self.views.len() {
-                                self.views[self.selected].selected = false;
-                                self.selected = self.layout.get_next_index(self.views.len(), self.selected, 0, -1, self.layout_direction);
-                                self.views[self.selected].selected = true;
-                            }
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::K), .. } => {
-                            if self.selected < self.views.len() {
-                                self.views[self.selected].selected = false;
-                                self.selected = self.layout.get_next_index(self.views.len(), self.selected, 0, 1, self.layout_direction);
-                                self.views[self.selected].selected = true;
-                            }
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::J), .. } => {
-                            if self.selected < self.views.len() {
-                                self.views[self.selected as usize].selected = false;
-                                self.selected = self.layout.get_next_index(self.views.len(), self.selected, -1, 0, self.layout_direction);
-                                self.views[self.selected as usize].selected = true;
-                            }
-                        },
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::L), .. } => {
-                            if self.selected < self.views.len() {
-                                self.views[self.selected as usize].selected = false;
-                                self.selected = self.layout.get_next_index(self.views.len(), self.selected, 1, 0, self.layout_direction);
-                                self.views[self.selected as usize].selected = true;
-                            }
-                        },
-
                         // quit
                         Event::Quit { .. } => break 'main,
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::P), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::P), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
+                        Event::KeyDown { scancode: Some(Scancode::P), keymod: Mod::LCTRLMOD, .. } |
+                        Event::KeyDown { scancode: Some(Scancode::P), keymod: Mod::RCTRLMOD, .. } => {
                             break 'main;
                         },
 
                         // toggle titlebar
-                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::LAlt), repeat : false, .. } => {
+                        Event::KeyDown { scancode: Some(Scancode::LAlt), repeat: false, .. } => {
                             self.show_titlebars = !self.show_titlebars;
                         },
 
-                        //
-                        _ => {
+                        // all other events
+                        Event::KeyDown { scancode: Some(scancode), keymod, .. } => {
+                            if !self.handle_event(scancode, keymod, &mut close_view, &mut open_file_open_dialog) {
+                            }
                             self.imgui_sdl2.handle_event(&mut self.imgui, &event);
-                        }
+                        },
+                        _ => self.imgui_sdl2.handle_event(&mut self.imgui, &event),
                     }
                 }
             }
+
+            let mut view_to_reload = None;
 
             while let Ok(event) = self.dir_watcher_recv.try_recv() {
                 println!("{:?}", event);
@@ -350,12 +415,7 @@ impl App {
                     notify::DebouncedEvent::NoticeRemove(_) => {},
                     notify::DebouncedEvent::Create(_) => {},
                     notify::DebouncedEvent::Write(path) => {
-                        match self.find_image_by_path(&path) {
-                            Some(image) => {
-                                image.reload_from_disk().unwrap_or(());
-                            }
-                            None => {}
-                        };
+                        view_to_reload = self.find_image_by_path(&path);
                     },
                     notify::DebouncedEvent::Chmod(_) => {},
                     notify::DebouncedEvent::Remove(_) => {},
@@ -365,6 +425,17 @@ impl App {
                 }
             }
 
+            if let Some(view_index) = view_to_reload {
+                let view = &mut self.views[view_index];
+                let history_enabled = view.history_enabled;
+                if history_enabled {
+                    view.freeze();
+                }
+
+                let path = view.image.path.clone();
+                self.open_image(&path, history_enabled).unwrap();
+            }
+
             // auto layout
             if self.auto_layout_dir {
                 // calc average aspect ratio
@@ -372,10 +443,8 @@ impl App {
                 let mut aspect = 0.0;
                 let mut count = 0.0;
                 for view in self.views.iter() {
-                    for img in view.images.iter() {
-                        aspect += img.width as f32 / img.height as f32;
-                        count += 1.0;
-                    }
+                    aspect += view.image.width as f32 / view.image.height as f32;
+                    count += 1.0;
                 }
 
                 let avg = aspect / count;
@@ -403,18 +472,76 @@ impl App {
                 self.layout.layout(&mut self.views, window_size.0 as i32, window_size.1 as i32, self.layout_direction);
             }
 
+            // context menu
+            {
+                use imgui::*;
+
+                let view = &mut self.views[self.selected];
+                let context_menu_id = im_str!("ContextMenu");
+
+                ui.popup(context_menu_id, || {
+                    ui.text(view.image.path.to_str().unwrap_or(""));
+                    ui.separator();
+
+                    // open
+                    if imgui::MenuItem::new(im_str!("Open")).build(&ui) {
+                        open_file_open_dialog = true;
+                    }
+                    if imgui::MenuItem::new(im_str!("Close")).build(&ui) {
+                        close_view = true;
+                    }
+                    
+                    // reload from disk
+                    if imgui::MenuItem::new(im_str!("Reload from disk")).build(&ui) {
+                        view.reload().unwrap_or(());
+                    }
+
+                    // sampling method
+                    if let Some(tok) = ui.begin_menu(im_str!("Sampling Method"), true) {
+                        let mut changed = false;
+                        changed |= ui.radio_button(im_str!("Nearest"), &mut view.filter_method, FilterMethod::Nearest);
+                        changed |= ui.radio_button(im_str!("Linear"), &mut view.filter_method, FilterMethod::Linear);
+                        tok.end(&ui);
+    
+                        if changed {
+                            view.set_filter_menthod(view.filter_method);
+                        }
+                    }
+    
+                    // enable history
+                    if imgui::MenuItem::new(im_str!("History")).selected(view.history_enabled).build(&ui) {
+                        view.history_enabled = !view.history_enabled;
+                    }
+                });
+    
+                if ui.is_mouse_clicked(MouseButton::Right) {
+                    ui.open_popup(context_menu_id);
+                }
+            }
+
+            let context_menu_open = unsafe {
+                imgui::sys::igIsPopupOpen(std::ffi::CString::new("ContextMenu").unwrap().as_ptr())
+            };
+
             let view_count = self.views.len();
-            for view in self.views.iter_mut() {
+            let mut next_selected = self.selected;
+            for (i, view) in self.views.iter_mut().enumerate() {
                 let border_color = match (view.selected, view_count) {
                     (true, 1) =>  [0.2, 0.2, 0.2, 1.0],
                     (true, _) =>  [1.0, 1.0, 1.0, 1.0],
                     (false, _) => [0.2, 0.2, 0.2, 1.0],
                 };
                 let tok = ui.push_style_color(imgui::StyleColor::Border, border_color);
-                view.render(&ui, self.show_titlebars, !self.open_file_dialog.is_open());
+                if view.render(&ui, self.show_titlebars, !self.open_file_dialog.is_open() && !context_menu_open) && !context_menu_open && !self.open_file_dialog.is_open() {
+                    next_selected = i;
+                }
                 tok.pop(&ui);
             }
+            self.views[self.selected].selected = false;
+            self.selected = next_selected;
+            self.views[self.selected].selected = true;
 
+            // open file
             let file_to_open = self.open_file_dialog.render(&ui, self.window.drawable_size());
 
             // error message
@@ -455,9 +582,21 @@ impl App {
 
             match file_to_open {
                 Some(file_to_open) => {
-                    self.open_image(&file_to_open).unwrap_or(());
+                    let _ = self.open_image(&file_to_open, false);
                 },
                 None => {},
+            }
+
+            if open_file_open_dialog {
+                self.open_file_open_dialog();
+            }
+
+            if close_view && self.selected < self.views.len() && self.views.len() > 1 {
+                self.views.remove(self.selected);
+                if !self.views.is_empty() {
+                    self.selected = self.selected % self.views.len();
+                    self.views[self.selected].selected = true;
+                }
             }
         }
     }
