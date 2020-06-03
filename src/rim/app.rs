@@ -389,6 +389,28 @@ impl App {
                             self.imgui_sdl2.handle_event(&mut self.imgui, &event);
                         }
                     }
+                } else if self.error_msg.is_some() {
+                    use sdl2::event::Event;
+
+                    match event {
+                        // quit
+                        Event::Quit { .. } => break 'main,
+                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::P), keymod: sdl2::keyboard::Mod::LCTRLMOD, .. } |
+                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::P), keymod: sdl2::keyboard::Mod::RCTRLMOD, .. } => {
+                            break 'main;
+                        },
+
+                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::Space), .. } |
+                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::Return), .. } |
+                        Event::KeyDown { scancode: Some(sdl2::keyboard::Scancode::Escape), .. } => {
+                            self.error_msg = None;
+                        },
+
+                        //
+                        _ => {
+                            self.imgui_sdl2.handle_event(&mut self.imgui, &event);
+                        }
+                    }
                 } else {
                     use sdl2::event::Event;
                     use sdl2::keyboard::*;
@@ -563,7 +585,7 @@ impl App {
                 };
                 let tok = ui.push_style_color(imgui::StyleColor::Border, border_color);
 
-                let allow_focus = !self.open_file_dialog.is_open() && !context_menu_open;
+                let allow_focus = !self.open_file_dialog.is_open() && !context_menu_open && self.error_msg.is_none();
                 if view.render(&ui, self.show_titlebars, allow_focus) && allow_focus {
                     next_selected = i;
                 }
@@ -579,36 +601,10 @@ impl App {
             // open file
             let file_to_open = self.open_file_dialog.render(&ui, self.window.drawable_size(), mouse_moved);
 
-            // error message
-            let mut show_err = false;
-            match &self.error_msg {
-                Some(msg) => {
-                    show_err = true;
-                    imgui::Window::new(imgui::im_str!("Error"))
-                        .focus_on_appearing(true)
-                        .focused(true)
-                        .bring_to_front_on_focus(true)
-                        .opened(&mut show_err)
-                        .position([0.0, 0.0], imgui::Condition::Always)
-                        .scroll_bar(false)
-                        .scrollable(false)
-                        .always_auto_resize(true)
-                        .collapsible(false)
-                        .build(&ui, || {
-                            ui.text(msg);
-                        });
-                },
-                None => {},
-            }
-
-            if !show_err {
-                self.error_msg = None;
-            }
-
             // dummy window so contex menu works
             imgui::Window::new(imgui::im_str!("i"))
                 .focus_on_appearing(false)
-                .focused(self.views.len() == 0 && !context_menu_open && !self.open_file_dialog.is_open())
+                .focused(self.views.len() == 0 && !context_menu_open && !self.open_file_dialog.is_open() && self.error_msg.is_none())
                 .position([-100.0, -100.0], imgui::Condition::Always)
                 .size([0.0, 0.0], imgui::Condition::Always)
                 .build(&ui, ||{});
@@ -616,6 +612,31 @@ impl App {
             unsafe {
                 gl::ClearColor(0.3, 0.3, 0.5, 1.0);
                 gl::Clear(gl::COLOR_BUFFER_BIT);
+            }
+
+            // error message
+            let mut show_err = false;
+            match &self.error_msg {
+                Some(msg) => {
+                    show_err = true;
+                    ui.popup_modal(imgui::im_str!("Error"))
+                        .opened(&mut show_err)
+                        .movable(true)
+                        .resizable(true)
+                        .save_settings(true)
+                        .always_auto_resize(true)
+                        .build(|| {
+                            ui.text(msg);
+                        });
+                    if show_err {
+                        ui.open_popup(imgui::im_str!("Error"));
+                    }
+                },
+                None => {},
+            }
+
+            if !show_err {
+                self.error_msg = None;
             }
             
             // render window contents here

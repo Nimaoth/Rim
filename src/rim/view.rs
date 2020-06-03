@@ -138,30 +138,29 @@ impl View {
                 let shift = ui.is_key_down(sdl2::keyboard::Scancode::LShift as u32) || ui.is_key_down(sdl2::keyboard::Scancode::RShift as u32);
                 
                 if ui.is_window_focused() && self.selected && !win {
-                    if ui.is_key_pressed(sdl2::keyboard::Scancode::Space as u32) {
-                        self.zoom = 1.0;
-                        self.rect_pos = Vec2::zero();
-                    }
-                    if ui.is_key_down(sdl2::keyboard::Scancode::W as u32) {
-                        self.rect_pos = self.rect_pos + Vec2::new(0.0, -self.pan_speed / self.zoom);
-                    }
-                    if ui.is_key_down(sdl2::keyboard::Scancode::S as u32) {
-                        self.rect_pos = self.rect_pos + Vec2::new(0.0, self.pan_speed / self.zoom);
-                    }
-                    if ui.is_key_down(sdl2::keyboard::Scancode::A as u32) {
-                        self.rect_pos = self.rect_pos + Vec2::new(-self.pan_speed / self.zoom, 0.0);
-                    }
-                    if ui.is_key_down(sdl2::keyboard::Scancode::D as u32) {
-                        self.rect_pos = self.rect_pos + Vec2::new(self.pan_speed / self.zoom, 0.0);
-                    }
-                    if ui.is_key_down(sdl2::keyboard::Scancode::Period as u32) {
-                        self.zoom *= 1.0 + self.zoom_speed * 0.01;
-                    }
-                    if ui.is_key_down(sdl2::keyboard::Scancode::Comma as u32) {
-                        self.zoom /= 1.0 + self.zoom_speed * 0.01;
-                    }
-
                     if !ctrl {
+                        if ui.is_key_pressed(sdl2::keyboard::Scancode::Space as u32) {
+                            self.zoom = 1.0;
+                            self.rect_pos = Vec2::zero();
+                        }
+                        if ui.is_key_down(sdl2::keyboard::Scancode::W as u32) {
+                            self.rect_pos = self.rect_pos + Vec2::new(0.0, -self.pan_speed / self.zoom);
+                        }
+                        if ui.is_key_down(sdl2::keyboard::Scancode::S as u32) {
+                            self.rect_pos = self.rect_pos + Vec2::new(0.0, self.pan_speed / self.zoom);
+                        }
+                        if ui.is_key_down(sdl2::keyboard::Scancode::A as u32) {
+                            self.rect_pos = self.rect_pos + Vec2::new(-self.pan_speed / self.zoom, 0.0);
+                        }
+                        if ui.is_key_down(sdl2::keyboard::Scancode::D as u32) {
+                            self.rect_pos = self.rect_pos + Vec2::new(self.pan_speed / self.zoom, 0.0);
+                        }
+                        if ui.is_key_down(sdl2::keyboard::Scancode::Period as u32) {
+                            self.zoom *= 1.0 + self.zoom_speed * 0.01;
+                        }
+                        if ui.is_key_down(sdl2::keyboard::Scancode::Comma as u32) {
+                            self.zoom /= 1.0 + self.zoom_speed * 0.01;
+                        }
                         if shift {
                             if ui.is_key_down(sdl2::keyboard::Scancode::Up as u32) {
                                 self.zoom *= 1.0 + self.zoom_speed * 0.01;
