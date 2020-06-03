@@ -20,7 +20,7 @@ impl OpenFileDialog {
         }
     }
 
-    pub fn render(&mut self, ui: &Ui, max_size: (u32, u32)) -> Option<PathBuf> {
+    pub fn render(&mut self, ui: &Ui, max_size: (u32, u32), mouse_moved: bool) -> Option<PathBuf> {
         let mut result = None;
         let mut open = self.open;
         use imgui::sys::ImVec2;
@@ -52,7 +52,9 @@ impl OpenFileDialog {
                     }
                     if ui.is_key_pressed(sdl2::keyboard::Scancode::L as u32) || ui.is_key_pressed(sdl2::keyboard::Scancode::Right as u32) {
                         match self.get_selected() {
-                            Some(dir) => self.move_dir_down(&dir),
+                            Some(dir) => if dir != ".."  {
+                                self.move_dir_down(&dir)
+                            },
                             None => {}
                         }
                     }
@@ -89,15 +91,30 @@ impl OpenFileDialog {
                 for (i, path) in self.item_list.iter().enumerate() {
                     let p = im_str!("{}", path);
                     if Selectable::new(&p)
+                        .flags(SelectableFlags::DONT_CLOSE_POPUPS)
                         .selected(i == self.selected)
                         .build(ui) {
                         clicked_on_item = Some(path.clone());
                     }
 
-                    if i == selected {
-                        ui.set_item_default_focus();
-                        unsafe {
-                            imgui::sys::igSetScrollHereY(0.5);
+                    if mouse_moved && ui.is_item_hovered() {
+                        selected = i;
+                    } else {
+                        if i == selected {
+                            ui.set_item_default_focus();
+                            let min = ui.item_rect_min()[1] - ui.window_content_region_min()[1] - ui.window_pos()[1] + 2.0 - ui.scroll_y();
+                            let max = ui.window_pos()[1] + ui.window_content_region_max()[1] - ui.item_rect_max()[1] + 7.0 + ui.scroll_y();
+                            // println!("{}, {}", min, max);
+                            if !ui.is_item_visible() || min <= 0.0 {
+                                unsafe {
+                                    imgui::sys::igSetScrollHereY(0.0);
+                                }
+                            }
+                            if !ui.is_item_visible() || max <= 0.0 {
+                                unsafe {
+                                    imgui::sys::igSetScrollHereY(1.0);
+                                }
+                            }
                         }
                     }
                 }

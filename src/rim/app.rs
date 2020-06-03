@@ -147,7 +147,7 @@ impl App {
                 None => sel_path.to_str().unwrap().to_owned(),
             }
         } else {
-            "/home".to_owned()
+            std::env::current_dir().unwrap().to_str().unwrap().to_owned()
         };
         self.open_file_dialog.open(path);
     }
@@ -361,10 +361,21 @@ impl App {
         'main: loop {
             let mut open_file_open_dialog = false;
             let mut close_view = false;
+            let mut mouse_moved = false;
+            let mut right_clicked = false;
 
+            
             for event in event_pump.poll_iter() {
                 if self.open_file_dialog.is_open() {
                     use sdl2::event::Event;
+
+                    if let Event::MouseMotion { .. } = event {
+                        mouse_moved = true;
+                    }
+                    if let Event::MouseWheel { .. } = event {
+                        mouse_moved = true;
+                    }
+
                     match event {
                         // quit
                         Event::Quit { .. } => break 'main,
@@ -381,6 +392,11 @@ impl App {
                 } else {
                     use sdl2::event::Event;
                     use sdl2::keyboard::*;
+                    use sdl2::mouse::*;
+
+                    if let Event::MouseButtonUp { mouse_btn: MouseButton::Right, .. } = event {
+                        right_clicked = true;
+                    }
 
                     match event {
                         // quit
@@ -466,6 +482,7 @@ impl App {
             let ui = self.imgui.frame();
             // ui.show_demo_window(&mut true);
 
+
             let window_size = self.window.size();
 
             if self.views.len() > 0 {
@@ -476,45 +493,58 @@ impl App {
             {
                 use imgui::*;
 
-                let view = &mut self.views[self.selected];
                 let context_menu_id = im_str!("ContextMenu");
 
-                ui.popup(context_menu_id, || {
-                    ui.text(view.image.path.to_str().unwrap_or(""));
-                    ui.separator();
+                if self.selected < self.views.len() {
+                    let view = &mut self.views[self.selected];
 
-                    // open
-                    if imgui::MenuItem::new(im_str!("Open")).build(&ui) {
-                        open_file_open_dialog = true;
-                    }
-                    if imgui::MenuItem::new(im_str!("Close")).build(&ui) {
-                        close_view = true;
-                    }
-                    
-                    // reload from disk
-                    if imgui::MenuItem::new(im_str!("Reload from disk")).build(&ui) {
-                        view.reload().unwrap_or(());
-                    }
+                    ui.popup(context_menu_id, || {
+                        ui.text(view.image.path.to_str().unwrap_or(""));
+                        ui.separator();
 
-                    // sampling method
-                    if let Some(tok) = ui.begin_menu(im_str!("Sampling Method"), true) {
-                        let mut changed = false;
-                        changed |= ui.radio_button(im_str!("Nearest"), &mut view.filter_method, FilterMethod::Nearest);
-                        changed |= ui.radio_button(im_str!("Linear"), &mut view.filter_method, FilterMethod::Linear);
-                        tok.end(&ui);
-    
-                        if changed {
-                            view.set_filter_menthod(view.filter_method);
+                        // open
+                        if imgui::MenuItem::new(im_str!("Open")).build(&ui) {
+                            open_file_open_dialog = true;
                         }
-                    }
+
+                        ui.separator();
+
+                        if imgui::MenuItem::new(im_str!("Close")).build(&ui) {
+                            close_view = true;
+                        }
+
+                        // reload from disk
+                        if imgui::MenuItem::new(im_str!("Reload from disk")).build(&ui) {
+                            view.reload().unwrap_or(());
+                        }
     
-                    // enable history
-                    if imgui::MenuItem::new(im_str!("History")).selected(view.history_enabled).build(&ui) {
-                        view.history_enabled = !view.history_enabled;
-                    }
-                });
-    
-                if ui.is_mouse_clicked(MouseButton::Right) {
+                        // sampling method
+                        if let Some(tok) = ui.begin_menu(im_str!("Sampling Method"), true) {
+                            let mut changed = false;
+                            changed |= ui.radio_button(im_str!("Nearest"), &mut view.filter_method, FilterMethod::Nearest);
+                            changed |= ui.radio_button(im_str!("Linear"), &mut view.filter_method, FilterMethod::Linear);
+                            tok.end(&ui);
+        
+                            if changed {
+                                view.set_filter_menthod(view.filter_method);
+                            }
+                        }
+        
+                        // enable history
+                        if imgui::MenuItem::new(im_str!("History")).selected(view.history_enabled).build(&ui) {
+                            view.history_enabled = !view.history_enabled;
+                        }
+                    });
+                } else {
+                    ui.popup(context_menu_id, || {
+                        // open
+                        if imgui::MenuItem::new(im_str!("Open")).build(&ui) {
+                            open_file_open_dialog = true;
+                        }
+                    });
+                }
+
+                if right_clicked {
                     ui.open_popup(context_menu_id);
                 }
             }
@@ -532,17 +562,22 @@ impl App {
                     (false, _) => [0.2, 0.2, 0.2, 1.0],
                 };
                 let tok = ui.push_style_color(imgui::StyleColor::Border, border_color);
-                if view.render(&ui, self.show_titlebars, !self.open_file_dialog.is_open() && !context_menu_open) && !context_menu_open && !self.open_file_dialog.is_open() {
+
+                let allow_focus = !self.open_file_dialog.is_open() && !context_menu_open;
+                if view.render(&ui, self.show_titlebars, allow_focus) && allow_focus {
                     next_selected = i;
                 }
                 tok.pop(&ui);
             }
-            self.views[self.selected].selected = false;
-            self.selected = next_selected;
-            self.views[self.selected].selected = true;
+
+            if self.views.len() > 0 {
+                self.views[self.selected].selected = false;
+                self.selected = next_selected;
+                self.views[self.selected].selected = true;
+            }
 
             // open file
-            let file_to_open = self.open_file_dialog.render(&ui, self.window.drawable_size());
+            let file_to_open = self.open_file_dialog.render(&ui, self.window.drawable_size(), mouse_moved);
 
             // error message
             let mut show_err = false;
@@ -570,6 +605,14 @@ impl App {
                 self.error_msg = None;
             }
 
+            // dummy window so contex menu works
+            imgui::Window::new(imgui::im_str!("i"))
+                .focus_on_appearing(false)
+                .focused(self.views.len() == 0 && !context_menu_open && !self.open_file_dialog.is_open())
+                .position([-100.0, -100.0], imgui::Condition::Always)
+                .size([0.0, 0.0], imgui::Condition::Always)
+                .build(&ui, ||{});
+
             unsafe {
                 gl::ClearColor(0.3, 0.3, 0.5, 1.0);
                 gl::Clear(gl::COLOR_BUFFER_BIT);
@@ -591,11 +634,13 @@ impl App {
                 self.open_file_open_dialog();
             }
 
-            if close_view && self.selected < self.views.len() && self.views.len() > 1 {
+            if close_view && self.selected < self.views.len() {
                 self.views.remove(self.selected);
                 if !self.views.is_empty() {
                     self.selected = self.selected % self.views.len();
                     self.views[self.selected].selected = true;
+                } else {
+                    self.selected = 0;
                 }
             }
         }
