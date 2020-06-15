@@ -39,7 +39,7 @@ pub struct App {
     maximized       : bool,
     open_file_dialog: OpenFileDialog,
 
-    error_msg       : Option<String>,
+    pub error_msg   : Option<String>,
 }
 
 impl App {

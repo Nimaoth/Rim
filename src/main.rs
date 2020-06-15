@@ -1,5 +1,9 @@
+#![windows_subsystem = "windows"]
+
+
 #[macro_use]
 extern crate clap;
+
 
 use std::path::*;
 
@@ -43,7 +47,6 @@ fn main() {
             Ok(_) => {},
             Err(_) => {
                 eprintln!("Failed to load image {:?}", path);
-                return;
             },
         }
     } else if Path::is_dir(&path) {
@@ -64,9 +67,6 @@ fn main() {
                 }
             }
             Err(msg) => eprintln!("Failed to load files in directory: {}", msg),
-        }
-        if count == 0 {
-            return;
         }
     } else {
         eprintln!("path is not a file or directory: {:?}", path);
