@@ -468,10 +468,11 @@ impl App {
                 let history_enabled = view.history_enabled;
                 if history_enabled {
                     view.freeze();
+                    let path = view.image.path.clone();
+                    self.open_image(&path, history_enabled).unwrap();
+                } else {
+                    view.reload().unwrap();
                 }
-
-                let path = view.image.path.clone();
-                self.open_image(&path, history_enabled).unwrap();
             }
 
             // auto layout
