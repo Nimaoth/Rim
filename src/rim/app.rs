@@ -5,6 +5,7 @@ use std::path::*;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::sync::mpsc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use notify::{Watcher, watcher};
 
@@ -33,6 +34,7 @@ pub struct App {
     dir_watcher_recv: mpsc::Receiver<notify::DebouncedEvent>,
 
     show_titlebars  : bool,
+    show_titlebar_timer : u128,
 
     selected        : usize,
 
@@ -93,7 +95,9 @@ impl App {
             dir_watcher     : watcher,
             dir_watcher_recv: watch_recv,
             
-            show_titlebars  : false,
+            show_titlebars  : true,
+            show_titlebar_timer: 0,
+
             selected        : 0,
             maximized       : false,
 
@@ -110,8 +114,6 @@ impl App {
         match self.find_image_by_path(&path) {
             Some(index) => Ok(index),
             None => {
-                println!("Opening image {:?}", path);
-
                 match Image::new(&path) {
                     Ok(image) => {
                         let id = self.next_view_id;
@@ -430,7 +432,11 @@ impl App {
 
                         // toggle titlebar
                         Event::KeyDown { scancode: Some(Scancode::LAlt), repeat: false, .. } => {
-                            self.show_titlebars = !self.show_titlebars;
+                            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+                            if now - self.show_titlebar_timer < 200 {
+                                self.show_titlebars = !self.show_titlebars;
+                            }
+                            self.show_titlebar_timer = now;
                         },
 
                         // all other events
@@ -579,7 +585,7 @@ impl App {
             let view_count = self.views.len();
             let mut next_selected = self.selected;
             for (i, view) in self.views.iter_mut().enumerate() {
-                let border_color = match (view.selected, view_count) {
+                let border_color = match (view.selected && !self.show_titlebars, view_count) {
                     (true, 1) =>  [0.2, 0.2, 0.2, 1.0],
                     (true, _) =>  [1.0, 1.0, 1.0, 1.0],
                     (false, _) => [0.2, 0.2, 0.2, 1.0],

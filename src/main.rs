@@ -37,8 +37,6 @@ fn main() {
         None => {},
     };
 
-    println!("{}, {}, {}", floating, width, height);
-
     let mut app = App::new(floating, width, height);
 
     let path = get_absolute_path(&PathBuf::from(matches.value_of("file").unwrap()));
@@ -50,7 +48,6 @@ fn main() {
             },
         }
     } else if Path::is_dir(&path) {
-        let mut count = 0;
         match std::fs::read_dir(path) {
             Ok(dir) => {
                 for image_path in dir.into_iter() {
@@ -58,7 +55,7 @@ fn main() {
                         Ok(path) => {
                             let path = get_absolute_path(&path.path());
                             match app.open_image(&path, false) {
-                                Ok(_) => count += 1,
+                                Ok(_) => {},
                                 Err(_) => eprintln!("Failed to load image '{:?}'", &path),
                             }
                         }

@@ -104,7 +104,6 @@ impl OpenFileDialog {
                             ui.set_item_default_focus();
                             let min = ui.item_rect_min()[1] - ui.window_content_region_min()[1] - ui.window_pos()[1] + 2.0 - ui.scroll_y();
                             let max = ui.window_pos()[1] + ui.window_content_region_max()[1] - ui.item_rect_max()[1] + 7.0 + ui.scroll_y();
-                            // println!("{}, {}", min, max);
                             if !ui.is_item_visible() || min <= 0.0 {
                                 unsafe {
                                     imgui::sys::igSetScrollHereY(0.0);
