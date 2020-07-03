@@ -76,17 +76,27 @@ impl Image {
             Err(err) => return Err(err.to_string()),
         };
 
-        let (img_data, width, height, format, data_format, data_type) = match image.as_rgb8() {
-            Some(rgb) => (
-                rgb.as_ref(),
-                rgb.width(),
-                rgb.height(),
-                gl::RGB8,
-                gl::RGB,
+        let rgba = image.to_rgba();
+        let (img_data, width, height, format, data_format, data_type) = (
+                rgba.as_ref(),
+                rgba.width(),
+                rgba.height(),
+                gl::RGBA8,
+                gl::RGBA,
                 gl::UNSIGNED_BYTE,
-            ),
-            None => return Err("Failed to load image".to_owned()),
-        };
+            );
+
+        // let (img_data, width, height, format, data_format, data_type) = match image.as_rgb8() {
+        //     Some(rgb) => (
+        //         rgb.as_ref(),
+        //         rgb.width(),
+        //         rgb.height(),
+        //         gl::RGB8,
+        //         gl::RGB,
+        //         gl::UNSIGNED_BYTE,
+        //     ),
+        //     None => return Err("Failed to load image 2".to_owned()),
+        // };
 
         GL!(BindTexture(TEXTURE_2D, self.renderer_id as u32));
         GL!(TexImage2D(

@@ -477,7 +477,12 @@ impl App {
                     let path = view.image.path.clone();
                     self.open_image(&path, history_enabled).unwrap();
                 } else {
-                    view.reload().unwrap();
+                    match view.reload() {
+                        Ok(_) => {},
+                        Err(msg) => {
+                            self.error_msg = Some(msg);
+                        }
+                    }
                 }
             }
 
